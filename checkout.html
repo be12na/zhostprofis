@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checkout Produk Fisik</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="preload" as="style" href="tailwind.css?v=2026_1">
+    <link rel="stylesheet" href="tailwind.css?v=2026_1">
+    <script src="site.config.js"></script>
+    <script src="config.js?v=2026_1"></script>
+    <script defer src="https://unpkg.com/lucide@0.577.0/dist/umd/lucide.min.js"></script>
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(20, 184, 166, .12), transparent 34%),
+                radial-gradient(circle at bottom right, rgba(14, 165, 233, .11), transparent 30%),
+                #f6f8fb;
+            color: #0f172a;
+        }
+        .panel {
+            background: rgba(255, 255, 255, .94);
+            border: 1px solid rgba(226, 232, 240, .95);
+            box-shadow: 0 30px 70px -55px rgba(15, 23, 42, .42);
+            backdrop-filter: blur(12px);
+        }
+        .field {
+            width: 100%;
+            border: 1.5px solid #dbe4ea;
+            border-radius: 1rem;
+            background: #fff;
+            padding: .95rem 1rem;
+            font-size: .95rem;
+            font-weight: 600;
+            transition: border-color .18s ease, box-shadow .18s ease;
+        }
+        .field:focus {
+            outline: none;
+            border-color: rgba(15, 118, 110, .8);
+            box-shadow: 0 0 0 4px rgba(20, 184, 166, .12);
+        }
+        .field.invalid {
+            border-color: rgba(220, 38, 38, .7);
+            box-shadow: 0 0 0 4px rgba(220, 38, 38, .08);
+        }
+        .meta-label {
+            font-size: .72rem;
+            font-weight: 800;
+            letter-spacing: .14em;
+            text-transform: uppercase;
+            color: #64748b;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #0f766e, #0891b2);
+            color: #fff;
+            box-shadow: 0 18px 35px -20px rgba(15, 118, 110, .8);
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+    <div id="toast-root" class="fixed right-4 top-4 z-50 space-y-3"></div>
+
+    <main class="px-4 py-8 sm:px-6 lg:px-8">
+        <div class="mx-auto max-w-6xl">
+            <div class="mb-6 flex items-center justify-between gap-4">
+                <a href="index.html" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold uppercase tracking-[0.15em] text-slate-600 shadow-sm">
+                    <i data-lucide="arrow-left" class="h-4 w-4"></i>
+                    Kembali
+                </a>
+                <div class="rounded-full bg-white px-4 py-2 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 shadow-sm">
+                    Checkout Produk Fisik
+                </div>
+            </div>
+
+            <div class="grid gap-6 lg:grid-cols-[1.2fr,0.8fr]">
+                <section class="panel rounded-[2rem] p-6 sm:p-8 lg:p-10">
+                    <div class="mb-8 border-b border-slate-100 pb-6">
+                        <p class="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-700">
+                            <i data-lucide="package-check" class="h-4 w-4"></i>
+                            Checkout Manual via WhatsApp
+                        </p>
+                        <h1 class="mt-4 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
+                            Form order fisik yang ringkas dan jelas
+                        </h1>
+                        <p class="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
+                            Isi data penerima, cek detail pesanan dan rekening transfer, lalu sistem akan menyimpan order ke Google Sheets dan membuka WhatsApp otomatis.
+                        </p>
+                    </div>
+
+                    <form id="checkout-form" class="space-y-5" novalidate>
+                        <input type="hidden" id="prod-id">
+                        <input type="hidden" id="prod-title">
+                        <input type="hidden" id="prod-price">
+
+                        <div class="grid gap-5 sm:grid-cols-2">
+                            <div class="sm:col-span-2">
+                                <label for="cust-name" class="mb-2 block text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Nama Lengkap</label>
+                                <input id="cust-name" type="text" autocomplete="name" class="field" placeholder="Nama lengkap penerima">
+                                <p id="error-name" class="mt-2 hidden text-xs font-semibold text-red-600"></p>
+                            </div>
+
+                            <div>
+                                <label for="cust-email" class="mb-2 block text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Email</label>
+                                <input id="cust-email" type="email" autocomplete="email" class="field" placeholder="email@aktif.com">
+                                <p id="error-email" class="mt-2 hidden text-xs font-semibold text-red-600"></p>
+                            </div>
+
+                            <div>
+                                <label for="cust-wa" class="mb-2 block text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Nomor WhatsApp</label>
+                                <input id="cust-wa" type="tel" inputmode="numeric" autocomplete="tel" class="field" placeholder="81234567890">
+                                <p class="mt-2 text-xs text-slate-400">Format tanpa angka 0 di depan.</p>
+                                <p id="error-wa" class="mt-2 hidden text-xs font-semibold text-red-600"></p>
+                            </div>
+
+                            <div class="sm:col-span-2">
+                                <label for="cust-address" class="mb-2 block text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Alamat Pengiriman Lengkap</label>
+                                <textarea id="cust-address" rows="4" class="field min-h-[130px] resize-y" placeholder="Nama jalan, nomor rumah, RT/RW, kelurahan, kecamatan, kota/kabupaten, provinsi, kode pos"></textarea>
+                                <p id="error-address" class="mt-2 hidden text-xs font-semibold text-red-600"></p>
+                            </div>
+                        </div>
+
+                        <div class="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5">
+                            <div class="mb-4 flex items-center justify-between gap-4">
+                                <div>
+                                    <p class="meta-label">Detail Pesanan</p>
+                                    <h2 class="mt-2 text-lg font-extrabold text-slate-900">Ringkasan Order</h2>
+                                </div>
+                                <span class="rounded-full bg-white px-3 py-1 text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500 shadow-sm">Google Sheets Ready</span>
+                            </div>
+
+                            <div class="grid gap-4 sm:grid-cols-[1.5fr,0.7fr,1fr]">
+                                <div>
+                                    <label for="order-product" class="mb-2 block text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Nama Produk</label>
+                                    <input id="order-product" type="text" class="field bg-slate-100" readonly>
+                                </div>
+                                <div>
+                                    <label for="order-qty" class="mb-2 block text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Jumlah</label>
+                                    <input id="order-qty" type="number" min="1" step="1" value="1" class="field">
+                                    <p id="error-qty" class="mt-2 hidden text-xs font-semibold text-red-600"></p>
+                                </div>
+                                <div>
+                                    <label for="order-price" class="mb-2 block text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Harga Satuan</label>
+                                    <input id="order-price" type="text" class="field bg-slate-100" readonly>
+                                </div>
+                            </div>
+
+                            <div class="mt-5 rounded-2xl bg-white p-4 shadow-sm">
+                                <div class="flex items-center justify-between gap-4">
+                                    <div>
+                                        <p class="meta-label">Total Harga</p>
+                                        <p id="order-total" class="mt-1 text-2xl font-extrabold tracking-tight text-slate-900">Rp 0</p>
+                                    </div>
+                                    <div class="text-right text-xs font-semibold text-slate-500">
+                                        <p id="order-detail-line">Produk: -</p>
+                                        <p id="order-qty-line">Jumlah: 1</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="rounded-[1.5rem] border border-emerald-100 bg-gradient-to-br from-emerald-50 to-cyan-50 p-5">
+                            <div class="mb-4 flex items-center gap-3">
+                                <div class="rounded-xl bg-white p-3 text-emerald-600 shadow-sm">
+                                    <i data-lucide="landmark" class="h-5 w-5"></i>
+                                </div>
+                                <div>
+                                    <p class="meta-label">Rekening Transfer</p>
+                                    <h2 class="mt-1 text-lg font-extrabold text-slate-900">Tujuan pembayaran manual</h2>
+                                </div>
+                            </div>
+
+                            <div class="grid gap-4 sm:grid-cols-3">
+                                <div class="rounded-2xl bg-white p-4 shadow-sm">
+                                    <p class="meta-label">Bank</p>
+                                    <p id="bank-name" class="mt-2 text-base font-bold text-slate-900">-</p>
+                                </div>
+                                <div class="rounded-2xl bg-white p-4 shadow-sm">
+                                    <p class="meta-label">Nomor Rekening</p>
+                                    <p id="bank-number" class="mt-2 break-all text-base font-bold text-slate-900">-</p>
+                                </div>
+                                <div class="rounded-2xl bg-white p-4 shadow-sm">
+                                    <p class="meta-label">Atas Nama</p>
+                                    <p id="bank-owner" class="mt-2 text-base font-bold text-slate-900">-</p>
+                                </div>
+                            </div>
+
+                            <p class="mt-4 text-sm leading-7 text-slate-600">
+                                Setelah submit, tidak ada pengiriman otomatis atau download digital. Order langsung diarahkan ke WhatsApp admin untuk konfirmasi manual.
+                            </p>
+                        </div>
+
+                        <button id="submit-btn" type="submit" class="btn-primary flex w-full items-center justify-center gap-3 rounded-2xl px-6 py-4 text-sm font-extrabold uppercase tracking-[0.16em]">
+                            <i data-lucide="send" class="h-5 w-5"></i>
+                            Simpan Order dan Buka WhatsApp
+                        </button>
+                    </form>
+
+                    <div id="redirect-card" class="mt-6 hidden rounded-[1.5rem] border border-cyan-100 bg-cyan-50 p-5">
+                        <p class="text-sm font-semibold text-slate-700">Jika WhatsApp belum terbuka otomatis, gunakan tombol berikut.</p>
+                        <a id="redirect-link" href="#" target="_blank" class="mt-3 inline-flex items-center gap-2 rounded-full bg-cyan-600 px-5 py-3 text-xs font-bold uppercase tracking-[0.16em] text-white">
+                            <i data-lucide="message-circle" class="h-4 w-4"></i>
+                            Buka WhatsApp
+                        </a>
+                    </div>
+                </section>
+
+                <aside class="panel rounded-[2rem] p-6 sm:p-8">
+                    <div class="rounded-[1.75rem] bg-slate-900 p-6 text-white shadow-xl">
+                        <p class="text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-300">Ringkasan Cepat</p>
+                        <h2 id="sidebar-product" class="mt-4 text-2xl font-extrabold tracking-tight">Memuat produk...</h2>
+                        <div class="mt-5 space-y-4 text-sm">
+                            <div class="flex justify-between gap-4">
+                                <span class="text-slate-300">Produk</span>
+                                <span id="summary-product" class="text-right font-bold">-</span>
+                            </div>
+                            <div class="flex justify-between gap-4">
+                                <span class="text-slate-300">Jumlah</span>
+                                <span id="summary-qty" class="font-bold">1</span>
+                            </div>
+                            <div class="flex justify-between gap-4">
+                                <span class="text-slate-300">Harga</span>
+                                <span id="summary-price" class="font-bold">Rp 0</span>
+                            </div>
+                        </div>
+                        <div class="mt-6 border-t border-white/10 pt-5">
+                            <p class="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">Total Bayar</p>
+                            <p id="summary-total" class="mt-2 text-3xl font-extrabold tracking-tight">Rp 0</p>
+                        </div>
+                    </div>
+
+                    <div class="mt-6 space-y-4">
+                        <div class="rounded-[1.5rem] border border-slate-200 bg-white p-5">
+                            <div class="flex items-start gap-3">
+                                <div class="rounded-xl bg-emerald-50 p-2 text-emerald-600">
+                                    <i data-lucide="sheet" class="h-5 w-5"></i>
+                                </div>
+                                <div>
+                                    <h3 class="text-sm font-extrabold uppercase tracking-[0.15em] text-slate-700">Google Sheets</h3>
+                                    <p class="mt-2 text-sm leading-7 text-slate-500">Data order disimpan dengan kolom timestamp, nama, email, no WA, alamat, detail pesanan, total harga, status pembayaran, dan bukti transfer.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="rounded-[1.5rem] border border-slate-200 bg-white p-5">
+                            <div class="flex items-start gap-3">
+                                <div class="rounded-xl bg-cyan-50 p-2 text-cyan-600">
+                                    <i data-lucide="smartphone" class="h-5 w-5"></i>
+                                </div>
+                                <div>
+                                    <h3 class="text-sm font-extrabold uppercase tracking-[0.15em] text-slate-700">WhatsApp API</h3>
+                                    <p class="mt-2 text-sm leading-7 text-slate-500">Redirect memakai URL WhatsApp API agar konsisten di Android, iPhone, desktop web, dan browser modern.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        (function() {
+            const cacheKey = 'cepat_global_settings';
+            const cacheAge = 60 * 60 * 1000;
+            function applySettings(data) {
+                if (!data) return;
+                if (data.site_name) document.title = 'Checkout ' + data.site_name;
+            }
+            let cached = null;
+            try { cached = JSON.parse(localStorage.getItem(cacheKey) || 'null'); } catch (e) {}
+            if (cached && cached.data) applySettings(cached.data);
+            window.__CEPAT_GLOBAL_SETTINGS__ = {
+                isFresh: !!(cached && cached.time && (Date.now() - cached.time <= cacheAge)),
+                sync: function(data, time) {
+                    try { localStorage.setItem(cacheKey, JSON.stringify({ data: data, time: Number(time || Date.now()) })); } catch (e) {}
+                    applySettings(data);
+                }
+            };
+        })();
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const productId = urlParams.get('id');
+        const productCacheKey = productId ? ('cepat_product_' + productId) : '';
+        const productCacheAge = 5 * 60 * 1000;
+
+        function formatCurrency(value) {
+            return 'Rp ' + Number(value || 0).toLocaleString('id-ID');
+        }
+
+        function showToast(message, type) {
+            const root = document.getElementById('toast-root');
+            const tones = {
+                success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+                warning: 'border-amber-200 bg-amber-50 text-amber-700',
+                error: 'border-red-200 bg-red-50 text-red-700'
+            };
+            const toast = document.createElement('div');
+            toast.className = 'rounded-2xl border px-4 py-3 text-sm font-semibold shadow-lg ' + (tones[type] || tones.success);
+            toast.textContent = message;
+            root.appendChild(toast);
+            setTimeout(() => toast.remove(), 3200);
+        }
+
+        function getApiUrl() {
+            return window.SCRIPT_URL || (typeof SCRIPT_URL !== 'undefined' ? SCRIPT_URL : '');
+        }
+
+        function digitsOnly(value) {
+            return String(value || '').replace(/[^0-9]/g, '');
+        }
+
+        function getQty() {
+            return Math.max(1, Number(document.getElementById('order-qty').value || 1));
+        }
+
+        function getPrice() {
+            return Number(document.getElementById('prod-price').value || 0);
+        }
+
+        function updateSummary() {
+            const title = document.getElementById('prod-title').value || '-';
+            const qty = getQty();
+            const price = getPrice();
+            const total = qty * price;
+            document.getElementById('order-product').value = title;
+            document.getElementById('order-price').value = formatCurrency(price);
+            document.getElementById('order-total').textContent = formatCurrency(total);
+            document.getElementById('order-detail-line').textContent = 'Produk: ' + title;
+            document.getElementById('order-qty-line').textContent = 'Jumlah: ' + qty;
+            document.getElementById('sidebar-product').textContent = title;
+            document.getElementById('summary-product').textContent = title;
+            document.getElementById('summary-qty').textContent = qty;
+            document.getElementById('summary-price').textContent = formatCurrency(price);
+            document.getElementById('summary-total').textContent = formatCurrency(total);
+        }
+
+        function setError(id, message) {
+            const field = document.getElementById(id);
+            const suffix = id === 'cust-address' ? 'address' : id.split('-')[1];
+            const error = document.getElementById('error-' + suffix);
+            if (!field || !error) return;
+            field.classList.toggle('invalid', !!message);
+            error.textContent = message || '';
+            error.classList.toggle('hidden', !message);
+        }
+
+        function validateForm() {
+            let valid = true;
+            const name = document.getElementById('cust-name').value.trim();
+            const email = document.getElementById('cust-email').value.trim();
+            const wa = digitsOnly(document.getElementById('cust-wa').value);
+            const address = document.getElementById('cust-address').value.trim();
+            const qty = getQty();
+
+            setError('cust-name', name.length >= 3 ? '' : 'Nama minimal 3 karakter.');
+            setError('cust-email', /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? '' : 'Format email tidak valid.');
+            setError('cust-wa', wa.length >= 9 ? '' : 'Nomor WhatsApp minimal 9 digit.');
+            setError('cust-address', address.length >= 10 ? '' : 'Alamat perlu diisi lebih lengkap.');
+
+            const qtyError = document.getElementById('error-qty');
+            const qtyField = document.getElementById('order-qty');
+            if (qty < 1 || !Number.isFinite(qty)) {
+                qtyField.classList.add('invalid');
+                qtyError.textContent = 'Jumlah minimal 1.';
+                qtyError.classList.remove('hidden');
+                valid = false;
+            } else {
+                qtyField.classList.remove('invalid');
+                qtyError.textContent = '';
+                qtyError.classList.add('hidden');
+            }
+
+            if (name.length < 3) valid = false;
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) valid = false;
+            if (wa.length < 9) valid = false;
+            if (address.length < 10) valid = false;
+            return valid;
+        }
+
+        function renderProduct(payload) {
+            const product = payload.data || {};
+            const payment = payload.payment || {};
+            document.getElementById('prod-id').value = product.id || productId || '';
+            document.getElementById('prod-title').value = product.title || '';
+            document.getElementById('prod-price').value = Number(product.harga || 0);
+            document.getElementById('bank-name').textContent = payment.bank_name || '-';
+            document.getElementById('bank-number').textContent = payment.bank_norek || '-';
+            document.getElementById('bank-owner').textContent = payment.bank_owner || '-';
+            updateSummary();
+        }
+
+        async function loadGlobalSettings() {
+            const state = window.__CEPAT_GLOBAL_SETTINGS__ || {};
+            if (state.isFresh) return;
+            const endpoint = getApiUrl();
+            if (!endpoint) return;
+            try {
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'get_global_settings' })
+                });
+                const json = await res.json();
+                if (json.status === 'success' && typeof state.sync === 'function') {
+                    state.sync(json.data, Date.now());
+                }
+            } catch (e) {}
+        }
+
+        async function loadProduct() {
+            if (!productId) {
+                showToast('Produk tidak ditemukan.', 'error');
+                setTimeout(() => window.location.href = 'index.html', 900);
+                return;
+            }
+
+            let cached = null;
+            let cachedTime = 0;
+            try {
+                const parsed = JSON.parse(localStorage.getItem(productCacheKey) || 'null');
+                if (parsed && parsed.data) {
+                    cached = parsed.data;
+                    cachedTime = Number(parsed.time || 0);
+                }
+            } catch (e) {}
+
+            if (cached && (Date.now() - cachedTime) <= productCacheAge) {
+                renderProduct(cached);
+                return;
+            }
+
+            const endpoint = getApiUrl();
+            if (!endpoint) {
+                showToast('API checkout belum tersedia.', 'error');
+                return;
+            }
+
+            try {
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'get_product', id: productId })
+                });
+                const json = await res.json();
+                if (json.status !== 'success') throw new Error(json.message || 'Produk tidak ditemukan.');
+                localStorage.setItem(productCacheKey, JSON.stringify({ data: json, time: Date.now() }));
+                renderProduct(json);
+            } catch (error) {
+                showToast(error.message || 'Gagal memuat detail produk.', 'error');
+            }
+        }
+
+        async function submitOrder(event) {
+            event.preventDefault();
+            if (!validateForm()) {
+                showToast('Lengkapi data checkout terlebih dahulu.', 'warning');
+                return;
+            }
+
+            const endpoint = getApiUrl();
+            if (!endpoint) {
+                showToast('API checkout belum tersedia.', 'error');
+                return;
+            }
+
+            const submitBtn = document.getElementById('submit-btn');
+            const qty = getQty();
+            const price = getPrice();
+            const payload = {
+                action: 'create_order',
+                nama: document.getElementById('cust-name').value.trim(),
+                email: document.getElementById('cust-email').value.trim(),
+                whatsapp: digitsOnly(document.getElementById('cust-wa').value),
+                alamat: document.getElementById('cust-address').value.trim(),
+                id_produk: document.getElementById('prod-id').value,
+                nama_produk: document.getElementById('prod-title').value,
+                harga_satuan: price,
+                jumlah: qty,
+                total_harga: qty * price
+            };
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i data-lucide="loader-circle" class="h-5 w-5 animate-spin"></i> Menyimpan Order...';
+            lucide.createIcons({ root: submitBtn });
+
+            try {
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+                if (json.status !== 'success') throw new Error(json.message || 'Gagal menyimpan order.');
+
+                try {
+                    sessionStorage.setItem('cepat_last_physical_order', JSON.stringify(json.order || {}));
+                } catch (e) {}
+
+                const redirectCard = document.getElementById('redirect-card');
+                const redirectLink = document.getElementById('redirect-link');
+                redirectLink.href = json.redirect_url || '#';
+                redirectCard.classList.remove('hidden');
+                lucide.createIcons({ root: redirectCard });
+                showToast('Order tersimpan. Mengarahkan ke WhatsApp...', 'success');
+
+                if (json.redirect_url) {
+                    setTimeout(() => window.location.assign(json.redirect_url), 350);
+                }
+            } catch (error) {
+                showToast(error.message || 'Gagal memproses order.', 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i data-lucide="send" class="h-5 w-5"></i> Simpan Order dan Buka WhatsApp';
+                lucide.createIcons({ root: submitBtn });
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', async function() {
+            lucide.createIcons();
+            await loadGlobalSettings();
+            await loadProduct();
+
+            try {
+                const userData = JSON.parse(sessionStorage.getItem('user_data') || 'null');
+                if (userData) {
+                    if (userData.nama) document.getElementById('cust-name').value = userData.nama;
+                    if (userData.email) document.getElementById('cust-email').value = userData.email;
+                    if (userData.whatsapp) {
+                        let wa = digitsOnly(userData.whatsapp);
+                        if (wa.startsWith('62')) wa = wa.substring(2);
+                        if (wa.startsWith('0')) wa = wa.substring(1);
+                        document.getElementById('cust-wa').value = wa;
+                    }
+                }
+            } catch (e) {}
+
+            document.getElementById('order-qty').addEventListener('input', updateSummary);
+            document.getElementById('cust-wa').addEventListener('input', function() {
+                this.value = digitsOnly(this.value);
+            });
+            document.getElementById('checkout-form').addEventListener('submit', submitOrder);
+            ['cust-name', 'cust-email', 'cust-wa', 'cust-address'].forEach(function(id) {
+                document.getElementById(id).addEventListener('blur', validateForm);
+            });
+        });
+    </script>
+</body>
+</html>
