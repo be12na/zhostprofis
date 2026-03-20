@@ -4027,3 +4027,66 @@ video {
   }
 }
 
+/* === Performance & Mobile-First Optimizations === */
+
+/* Content-visibility for off-screen sections */
+section, footer, aside {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 500px;
+}
+
+/* Smooth scrolling with reduced-motion respect */
+html {
+  scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Font rendering optimization */
+body {
+  text-rendering: optimizeSpeed;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Image lazy-load placeholder */
+img[loading="lazy"] {
+  background-color: #f1f5f9;
+}
+
+/* GPU acceleration for animated elements */
+.fade-in, .animate-spin, .animate-pulse {
+  will-change: transform, opacity;
+}
+
+/* Touch target minimum sizes (WCAG 2.5.8) */
+@media (pointer: coarse) {
+  a, button, [role="button"], input[type="submit"], input[type="button"], select {
+    min-height: 48px;
+    min-width: 48px;
+  }
+}
+
+/* Responsive breakpoints: 320px (small mobile) */
+@media (max-width: 320px) {
+  .max-w-7xl { padding-left: 1rem; padding-right: 1rem; }
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.25rem; }
+}
+
+/* Responsive breakpoints: 768px (tablet) */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .max-w-7xl { padding-left: 1.5rem; padding-right: 1.5rem; }
+}
+
+/* High contrast mode support */
+@media (forced-colors: active) {
+  a, button { border: 1px solid ButtonText; }
+}
+

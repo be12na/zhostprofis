@@ -6,7 +6,8 @@
     <title>Checkout Produk Fisik</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
     <link rel="preload" as="style" href="tailwind.css?v=2026_1">
     <link rel="stylesheet" href="tailwind.css?v=2026_1">
     <script src="site.config.js"></script>
@@ -14,13 +15,16 @@
     <script defer src="https://unpkg.com/lucide@0.577.0/dist/umd/lucide.min.js"></script>
     <style>
         body {
-            font-family: 'Plus Jakarta Sans', sans-serif;
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 16px;
+            -webkit-text-size-adjust: 100%;
             background:
                 radial-gradient(circle at top left, rgba(20, 184, 166, .12), transparent 34%),
                 radial-gradient(circle at bottom right, rgba(14, 165, 233, .11), transparent 30%),
                 #f6f8fb;
             color: #0f172a;
         }
+        a, button, input, select, textarea { min-height: 48px; touch-action: manipulation; }
         .panel {
             background: rgba(255, 255, 255, .94);
             border: 1px solid rgba(226, 232, 240, .95);

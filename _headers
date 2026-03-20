@@ -1,5 +1,5 @@
 # ============================================
-# Cloudflare Security Headers
+# Cloudflare Security & Performance Headers
 # ============================================
 
 # --- GLOBAL SECURITY HEADERS ---
@@ -10,21 +10,27 @@
   Referrer-Policy: strict-origin-when-cross-origin
   Permissions-Policy: camera=(), microphone=(), geolocation=()
 
-# --- FORCE CORRECT MIME TYPE FOR JS FILES ---
+# --- STATIC ASSETS: IMMUTABLE LONG-CACHE ---
 /tailwind.css
   Content-Type: text/css; charset=utf-8
   Cache-Control: public, max-age=31536000, immutable
-
-/site.config.js
-  Content-Type: application/javascript; charset=utf-8
-  Cache-Control: public, max-age=300, stale-while-revalidate=86400
 
 /config.js
   Content-Type: application/javascript; charset=utf-8
   Cache-Control: public, max-age=31536000, immutable
 
+# --- CONFIG: SHORT-CACHE WITH SWR ---
+/site.config.js
+  Content-Type: application/javascript; charset=utf-8
+  Cache-Control: public, max-age=300, stale-while-revalidate=86400
+
+# --- HTML PAGES: SHORT-CACHE WITH SWR ---
 /*.html
-  Cache-Control: public, max-age=60, stale-while-revalidate=600
+  Cache-Control: public, max-age=120, stale-while-revalidate=600, stale-if-error=86400
+
+# --- OG IMAGE: LONG-CACHE ---
+/assets/seo/*
+  Cache-Control: public, max-age=2592000, stale-while-revalidate=604800
 
 # --- BLOCK SENSITIVE FILES FROM INDEXING ---
 /appscript.js

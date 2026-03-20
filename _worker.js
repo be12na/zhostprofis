@@ -303,18 +303,22 @@ export default {
       }
     }
 
-    // Everything else → pass to static assets
+    // Everything else → pass to static assets (HTML pages etc.)
     try {
       if (env.ASSETS) {
         const staticRes = await env.ASSETS.fetch(request);
-        return maybeCompress(request, withStaticCacheHeaders(staticRes, url.pathname));
+        const cached = withStaticCacheHeaders(staticRes, url.pathname);
+        const minified = await maybeMinifyHtml(cached, url.pathname);
+        return maybeCompress(request, addPreloadHeaders(minified, url.pathname));
       }
     } catch (e) {
       // fallback if ASSETS binding fails
     }
 
     // Final fallback: fetch the original URL directly
-    return maybeCompress(request, withStaticCacheHeaders(await fetch(request), url.pathname));
+    const fallbackRes = withStaticCacheHeaders(await fetch(request), url.pathname);
+    const fallbackMinified = await maybeMinifyHtml(fallbackRes, url.pathname);
+    return maybeCompress(request, addPreloadHeaders(fallbackMinified, url.pathname));
   }
 };
 
@@ -815,13 +819,16 @@ function isCacheableAssetPath(pathname) {
 function resolveAssetCacheControl(pathname) {
   const p = String(pathname || '').toLowerCase();
   if (!p || p === '/' || p.endsWith('.html')) {
-    return 'public, max-age=60, s-maxage=300, stale-while-revalidate=600';
+    return 'public, max-age=120, s-maxage=300, stale-while-revalidate=600, stale-if-error=86400';
   }
   if (p.endsWith('/site.config.js') || p === '/site.config.js') {
     return 'public, max-age=300, s-maxage=300, stale-while-revalidate=86400';
   }
   if (p.endsWith('/config.js') || p === '/config.js') {
     return 'public, max-age=86400, s-maxage=86400, immutable';
+  }
+  if (p.startsWith('/assets/seo/')) {
+    return 'public, max-age=2592000, s-maxage=2592000, stale-while-revalidate=604800';
   }
   if (isCacheableAssetPath(p)) {
     return 'public, max-age=31536000, s-maxage=31536000, immutable';
@@ -960,6 +967,47 @@ function maybeCompress(request, response) {
   // Let Cloudflare negotiate gzip/brotli at the edge.
   // Manual gzip here caused double-compressed HTML/CSS/JS in production.
   return response;
+}
+
+function minifyHtml(html) {
+  if (!html || typeof html !== 'string') return html;
+  return html
+    .replace(/<!--(?!\[if)[\s\S]*?-->/g, '')
+    .replace(/>\s{2,}</g, '> <')
+    .replace(/\n\s*\n/g, '\n');
+}
+
+async function maybeMinifyHtml(response, pathname) {
+  const p = String(pathname || '').toLowerCase();
+  if (!p.endsWith('.html') && p !== '/') return response;
+  const ct = response.headers.get('content-type') || '';
+  if (!ct.includes('text/html')) return response;
+  try {
+    const text = await response.text();
+    const minified = minifyHtml(text);
+    const headers = new Headers(response.headers);
+    headers.set('Content-Length', String(new TextEncoder().encode(minified).length));
+    return new Response(minified, { status: response.status, statusText: response.statusText, headers });
+  } catch (e) {
+    return response;
+  }
+}
+
+function addPreloadHeaders(response, pathname) {
+  const p = String(pathname || '').toLowerCase();
+  if (!p.endsWith('.html') && p !== '/') return response;
+  try {
+    const headers = new Headers(response.headers);
+    const links = [
+      '</tailwind.css?v=2026_1>; rel=preload; as=style',
+      '</site.config.js>; rel=preload; as=script',
+      '</config.js?v=2026_1>; rel=preload; as=script'
+    ];
+    headers.set('Link', links.join(', '));
+    return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  } catch (e) {
+    return response;
+  }
 }
 
 const _rl = new Map();
