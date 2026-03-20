@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(node scripts/sync-installer.js)",
-      "Bash(node -c _worker.js)"
+      "Bash(node -c _worker.js)",
+      "Bash(npx wrangler:*)"
     ]
   }
 }
