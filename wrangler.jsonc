@@ -15,7 +15,7 @@
     "nodejs_compat"
   ],
   "vars": {
-    "ALLOWED_ORIGINS": "https://kelasjagoan.my.id,https://www.kelasjagoan.my.id",
+    "ALLOWED_ORIGINS": "https://profis.zhost.digital,https://www.profis.zhost.digital",
     "APP_GAS_URL": "https://script.google.com/macros/s/AKfycbyQ3-A4_nRf2X5jpcehnnX_d6dkka7Q83apdbbplNYQh5BasZ3ay3s28TwBgIUJRiBovw/exec",
     "MOOTA_GAS_URL": "https://script.google.com/macros/s/AKfycbyQ3-A4_nRf2X5jpcehnnX_d6dkka7Q83apdbbplNYQh5BasZ3ay3s28TwBgIUJRiBovw/exec",
     "MOOTA_TOKEN": ""
