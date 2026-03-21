@@ -165,7 +165,11 @@
                 var _cacheMem = new Map();
                 var _pendingReq = new Map();
                 var _cachePrefix = 'cepat_api_cache_v3::';
+                var _manifestStorageKey = 'cepat_cache_manifest_v1';
+                var _manifestMemTtlMs = 5000;
+                var _manifestPending = null;
                 var _actionMeta = {
+                    get_cache_manifest: { ttl: 5 * 1000, storage: 'memory' },
                     get_global_settings: { ttl: 3600 * 1000, storage: 'local' },
                     get_products: { ttl: 60 * 1000, storage: 'local' },
                     get_product: { ttl: 60 * 1000, storage: 'local' },
@@ -261,6 +265,93 @@
                     } catch (e) { }
                     return null;
                 };
+                var _safeJsonParse = function (value) {
+                    try { return JSON.parse(String(value || '')); } catch (e) { return null; }
+                };
+                var _normalizeTags = function (tags) {
+                    var source = Array.isArray(tags)
+                        ? tags
+                        : (typeof tags === 'string' ? String(tags).split(',') : []);
+                    var out = [];
+                    source.forEach(function (item) {
+                        var tag = String(item || '').trim().toLowerCase();
+                        if (!tag || out.indexOf(tag) !== -1) return;
+                        out.push(tag);
+                    });
+                    return out;
+                };
+                var _normalizeManifest = function (manifest) {
+                    var raw = manifest && typeof manifest === 'object' ? manifest : {};
+                    var versions = raw.versions && typeof raw.versions === 'object' ? raw.versions : {};
+                    return {
+                        schema: Number(raw.schema || 1) || 1,
+                        updated_at: Number(raw.updated_at || 0) || 0,
+                        poll_seconds: Math.max(5, Number(raw.poll_seconds || 15) || 15),
+                        versions: versions,
+                        fetched_at: Number(raw.fetched_at || Date.now()) || Date.now()
+                    };
+                };
+                var _readStoredManifest = function () {
+                    try {
+                        var store = _storageFor('local');
+                        if (!store) return null;
+                        var raw = store.getItem(_manifestStorageKey);
+                        if (!raw) return null;
+                        return _normalizeManifest(_safeJsonParse(raw));
+                    } catch (e) {
+                        return null;
+                    }
+                };
+                var _writeStoredManifest = function (manifest) {
+                    try {
+                        var store = _storageFor('local');
+                        if (!store) return;
+                        store.setItem(_manifestStorageKey, JSON.stringify(manifest));
+                    } catch (e) { }
+                };
+                var _manifestState = _readStoredManifest() || _normalizeManifest({ versions: {} });
+                var _resolveActionTags = function (action, init) {
+                    var name = String(action || '');
+                    var payload = (init && typeof init.body === 'string') ? _safeJsonParse(init.body) : null;
+                    if (!name) return [];
+                    if (name === 'get_global_settings') return ['settings'];
+                    if (name === 'get_product') return ['products', 'settings'];
+                    if (name === 'get_products') {
+                        return (payload && (payload.email || payload.target_user_id))
+                            ? ['products', 'orders', 'users']
+                            : ['products'];
+                    }
+                    if (name === 'get_page_content' || name === 'get_pages') return ['pages'];
+                    if (name === 'get_dashboard_data' || name === 'get_admin_data') return ['settings', 'products', 'pages', 'orders', 'users'];
+                    if (name === 'get_admin_orders') return ['orders'];
+                    if (name === 'get_admin_users') return ['users'];
+                    return [];
+                };
+                var _manifestToken = function (tags, manifest) {
+                    var normalizedTags = _normalizeTags(tags).slice().sort();
+                    if (!normalizedTags.length) return '';
+                    var active = manifest && manifest.versions ? manifest.versions : {};
+                    return normalizedTags.map(function (tag) {
+                        return tag + ':' + Number(active[tag] || 0);
+                    }).join('|');
+                };
+                var _setManifest = function (manifest) {
+                    var next = _normalizeManifest(manifest);
+                    var currentToken = _manifestToken(Object.keys((_manifestState && _manifestState.versions) || {}), _manifestState);
+                    var nextToken = _manifestToken(Object.keys(next.versions || {}), next);
+                    next.fetched_at = Date.now();
+                    _manifestState = next;
+                    _writeStoredManifest(next);
+                    if (nextToken && nextToken !== currentToken) {
+                        _markStat('cache_invalidations', 'manifest');
+                    }
+                    return next;
+                };
+                var _getKnownManifest = function () {
+                    if (_manifestState && _manifestState.versions) return _manifestState;
+                    _manifestState = _readStoredManifest() || _normalizeManifest({ versions: {} });
+                    return _manifestState;
+                };
                 var _hash = function (text) {
                     var str = String(text || '');
                     var hash = 5381;
@@ -269,12 +360,13 @@
                     }
                     return (hash >>> 0).toString(36);
                 };
-                var _cacheKey = function (url, init) {
+                var _cacheKey = function (url, init, action) {
                     var body = (init && typeof init.body === 'string') ? init.body : '';
-                    return String(url || '') + '::' + body;
+                    var manifestKey = _manifestToken(_resolveActionTags(action, init), _getKnownManifest());
+                    return String(url || '') + '::' + body + '::' + manifestKey;
                 };
                 var _persistentCacheKey = function (action, url, init) {
-                    return _cachePrefix + String(action || 'unknown') + '::' + _hash(_cacheKey(url, init));
+                    return _cachePrefix + String(action || 'unknown') + '::' + _hash(_cacheKey(url, init, action));
                 };
                 var _responsePayload = async function (res) {
                     var text = await res.text();
@@ -396,6 +488,136 @@
                     }
                     throw lastErr || new Error('Backend unreachable: ' + (url || '(unknown url)'));
                 };
+                var _readJsonResponse = async function (res) {
+                    try { return await res.clone().json(); } catch (e) { return null; }
+                };
+                var _applyManifestFromPayload = function (payload) {
+                    try {
+                        if (payload && payload.cache_manifest && typeof payload.cache_manifest === 'object') {
+                            _setManifest(payload.cache_manifest);
+                            return true;
+                        }
+                    } catch (e) { }
+                    return false;
+                };
+                var _refreshManifestFromNetwork = async function (force) {
+                    var manifest = _getKnownManifest();
+                    if (!force && manifest && manifest.fetched_at && (Date.now() - Number(manifest.fetched_at || 0)) <= _manifestMemTtlMs) {
+                        return manifest;
+                    }
+                    if (_manifestPending) return _manifestPending;
+                    var endpoint = window.API_URL || window.SCRIPT_URL || '';
+                    if (!endpoint) return manifest;
+                    _manifestPending = _fetchWithRetry(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'get_cache_manifest', ts: Date.now(), rid: 'manifest_' + Date.now() })
+                    }).then(async function (res) {
+                        var payload = await _readJsonResponse(res);
+                        if (payload && payload.status === 'success' && payload.data) {
+                            return _setManifest(payload.data);
+                        }
+                        return _getKnownManifest();
+                    }).catch(function () {
+                        return _getKnownManifest();
+                    }).finally(function () {
+                        _manifestPending = null;
+                    });
+                    return _manifestPending;
+                };
+                try {
+                    window.CEPAT_CACHE = {
+                        getManifest: function () {
+                            return JSON.parse(JSON.stringify(_getKnownManifest()));
+                        },
+                        applyManifest: function (manifest) {
+                            return JSON.parse(JSON.stringify(_setManifest(manifest)));
+                        },
+                        refreshManifest: function (options) {
+                            return _refreshManifestFromNetwork(!!(options && options.force));
+                        },
+                        getVersionToken: function (tags) {
+                            return _manifestToken(_normalizeTags(tags), _getKnownManifest());
+                        },
+                        readEntry: function (key, options) {
+                            try {
+                                var cfg = options || {};
+                                var storageKind = cfg.storage === 'session' ? 'session' : 'local';
+                                var store = _storageFor(storageKind);
+                                if (!store) return { data: null, stale: true, missing: true };
+                                var raw = store.getItem(String(key || ''));
+                                if (!raw) return { data: null, stale: true, missing: true };
+                                var parsed = _safeJsonParse(raw);
+                                if (!parsed || typeof parsed !== 'object') return { data: null, stale: true, missing: true };
+                                var maxAge = Number(cfg.maxAge || 0);
+                                var now = Date.now();
+                                var expectedToken = _manifestToken(_normalizeTags(cfg.tags), _getKnownManifest());
+                                var storedToken = String(parsed.version_token || '');
+                                var staleByAge = !!(maxAge && (!parsed.time || (now - Number(parsed.time || 0) > maxAge)));
+                                var staleByVersion = !!(expectedToken && storedToken && expectedToken !== storedToken);
+                                var staleByMissingVersion = !!(expectedToken && !storedToken);
+                                return {
+                                    data: Object.prototype.hasOwnProperty.call(parsed, 'data') ? parsed.data : parsed,
+                                    time: Number(parsed.time || 0),
+                                    stale: staleByAge || staleByVersion || staleByMissingVersion,
+                                    missing: false,
+                                    versionToken: storedToken,
+                                    expectedVersionToken: expectedToken,
+                                    payload: parsed
+                                };
+                            } catch (e) {
+                                return { data: null, stale: true, missing: true };
+                            }
+                        },
+                        writeEntry: function (key, data, options) {
+                            var cfg = options || {};
+                            var storageKind = cfg.storage === 'session' ? 'session' : 'local';
+                            var store = _storageFor(storageKind);
+                            if (!store) return null;
+                            var payload = {
+                                data: data,
+                                time: Number(cfg.time || Date.now()),
+                                tags: _normalizeTags(cfg.tags),
+                                version_token: _manifestToken(_normalizeTags(cfg.tags), _getKnownManifest())
+                            };
+                            try {
+                                store.setItem(String(key || ''), JSON.stringify(payload));
+                            } catch (e) { }
+                            return payload;
+                        },
+                        removeEntry: function (key, options) {
+                            try {
+                                var storageKind = options && options.storage === 'session' ? 'session' : 'local';
+                                var store = _storageFor(storageKind);
+                                if (store) store.removeItem(String(key || ''));
+                            } catch (e) { }
+                        },
+                        watchManifest: function (callback, options) {
+                            var cfg = options || {};
+                            var stopped = false;
+                            var includeHidden = !!cfg.includeHidden;
+                            var lastToken = _manifestToken(Object.keys((_getKnownManifest().versions) || {}), _getKnownManifest());
+                            var intervalMs = Math.max(5000, Number(cfg.intervalMs || ((_getKnownManifest().poll_seconds || 15) * 1000)));
+                            var tick = function () {
+                                if (stopped) return;
+                                if (!includeHidden && typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+                                _refreshManifestFromNetwork(false).then(function (manifest) {
+                                    if (stopped || !manifest) return;
+                                    var nextToken = _manifestToken(Object.keys((manifest.versions) || {}), manifest);
+                                    if (!nextToken || nextToken === lastToken) return;
+                                    lastToken = nextToken;
+                                    try { callback(JSON.parse(JSON.stringify(manifest))); } catch (e) { }
+                                });
+                            };
+                            var timer = setInterval(tick, intervalMs);
+                            if (cfg.immediate !== false) tick();
+                            return function () {
+                                stopped = true;
+                                clearInterval(timer);
+                            };
+                        }
+                    };
+                } catch (e) { }
                 window.__CEPAT_FETCH_WRAPPED__ = true;
                 window.fetch = function (input, init) {
                     var url = _getUrl(input);
@@ -403,14 +625,16 @@
                         var method = (init && init.method ? String(init.method) : (input && input.method ? String(input.method) : 'GET')).toUpperCase();
                         var action = _parseAction(init);
                         if (method === 'POST' && _isCacheableAction(action)) {
-                            var k = _cacheKey(url, init);
+                            var k = _cacheKey(url, init, action);
                             var hit = _cacheGet(k);
                             if (hit) {
+                                _applyManifestFromPayload(_safeJsonParse(hit.body));
                                 _markStat('memory_cache_hits', action);
                                 return Promise.resolve(_toResponse(hit));
                             }
                             var storageHit = _storageGet(action, url, init);
                             if (storageHit) {
+                                _applyManifestFromPayload(_safeJsonParse(storageHit.body));
                                 _cacheSet(k, Number(_actionTtl[action] || 0), storageHit);
                                 _markStat('storage_cache_hits', action);
                                 return Promise.resolve(_toResponse(storageHit));
@@ -425,6 +649,7 @@
                             var p = _fetchWithRetry(input, init)
                                 .then(async function (res) {
                                     var payload = await _responsePayload(res.clone());
+                                    _applyManifestFromPayload(_safeJsonParse(payload.body));
                                     if (res.ok && ttl > 0) {
                                         _cacheSet(k, ttl, payload);
                                         _storageSet(action, url, init, ttl, payload);
@@ -435,9 +660,10 @@
                             _pendingReq.set(k, p);
                             return p.then(function (payload) { return _toResponse(payload); });
                         }
-                        return _fetchWithRetry(input, init).then(function (res) {
+                        return _fetchWithRetry(input, init).then(async function (res) {
                             if (method === 'POST' && _isMutatingAction(action) && res && res.ok) {
-                                _cacheClear();
+                                var payload = await _readJsonResponse(res);
+                                if (!_applyManifestFromPayload(payload)) _cacheClear();
                                 _markStat('cache_invalidations', action);
                             }
                             return res;
@@ -479,7 +705,8 @@
                                         headers: { 'content-type': 'application/json' },
                                         body: JSON.stringify(entry.data)
                                     };
-                                    _cacheSet(_cacheKey(endpoint, syntheticInit), ttl, syntheticPayload);
+                                    _applyManifestFromPayload(entry.data);
+                                    _cacheSet(_cacheKey(endpoint, syntheticInit, action), ttl, syntheticPayload);
                                     _storageSet(action, endpoint, syntheticInit, ttl, syntheticPayload);
                                 });
                             }

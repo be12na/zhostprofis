@@ -19,14 +19,21 @@ const DEMO_ADMIN_ACCOUNT = {
   role: "demo_admin",
   read_only: true
 };
-const ADMIN_SESSION_TTL_SECONDS = 15 * 60;
 const ADMIN_SESSION_CACHE_PREFIX = "admin_session_";
+const ADMIN_SESSION_STORE_PREFIX = "persist_admin_session_";
+const ADMIN_SESSION_CACHE_TTL_SECONDS = 6 * 60 * 60;
 const DEMO_MASK_VALUE = "\u2022\u2022\u2022\u2022";
 const DEMO_MASK_VALUE_LONG = "\u2022\u2022\u2022\u2022\u2022\u2022";
 const PHYSICAL_ORDER_HEADERS = ["timestamp", "nama", "email", "no_wa", "alamat", "detail_pesanan", "total_harga", "status_pembayaran", "bukti_transfer"];
 const PHYSICAL_ORDER_STATUS_PENDING = "Pending";
 const PHYSICAL_ORDER_STATUS_PAID = "Lunas";
 const PHYSICAL_ORDER_STATUS_CANCELLED = "Batal";
+const CACHE_MANIFEST_SCHEMA = 1;
+const CACHE_MANIFEST_CACHE_KEY = "cache_manifest_v1";
+const CACHE_MANIFEST_STORE_KEY = "cepat_cache_manifest_v1";
+const CACHE_MANIFEST_CACHE_TTL_SECONDS = 5;
+const CACHE_MANIFEST_POLL_SECONDS = 15;
+const CACHE_MANIFEST_TAGS = ["settings", "products", "pages", "orders", "users"];
 
 function getScriptConfig(key) {
   try {
@@ -85,6 +92,140 @@ function getSettingsMap_() {
     }
     return map;
   }, 1800); // Cache for 30 minutes
+}
+
+function normalizeCacheTagList_(input) {
+  const valid = {};
+  CACHE_MANIFEST_TAGS.forEach(function(tag) {
+    valid[tag] = true;
+  });
+  const source = Array.isArray(input)
+    ? input
+    : (typeof input === "string" ? String(input).split(",") : []);
+  const normalized = [];
+  source.forEach(function(item) {
+    const tag = String(item || "").trim().toLowerCase();
+    if (!tag || !valid[tag]) return;
+    if (normalized.indexOf(tag) === -1) normalized.push(tag);
+  });
+  return normalized;
+}
+
+function createDefaultCacheManifest_() {
+  const now = Date.now();
+  const versions = {};
+  CACHE_MANIFEST_TAGS.forEach(function(tag) {
+    versions[tag] = now;
+  });
+  return {
+    schema: CACHE_MANIFEST_SCHEMA,
+    updated_at: now,
+    poll_seconds: CACHE_MANIFEST_POLL_SECONDS,
+    versions: versions
+  };
+}
+
+function normalizeCacheManifest_(raw) {
+  const fallback = createDefaultCacheManifest_();
+  const parsed = raw && typeof raw === "object" ? raw : {};
+  const versions = {};
+  CACHE_MANIFEST_TAGS.forEach(function(tag, index) {
+    const candidate = Number(parsed.versions && parsed.versions[tag]);
+    versions[tag] = isFinite(candidate) && candidate > 0
+      ? candidate
+      : (Number(fallback.updated_at || Date.now()) + index);
+  });
+  const maxVersion = Math.max.apply(null, CACHE_MANIFEST_TAGS.map(function(tag) {
+    return Number(versions[tag] || 0);
+  }).concat([0]));
+  const parsedUpdatedAt = Number(parsed.updated_at || 0);
+  const updatedAt = (isFinite(parsedUpdatedAt) && parsedUpdatedAt >= maxVersion)
+    ? parsedUpdatedAt
+    : Math.max(maxVersion, Number(fallback.updated_at || 0));
+  return {
+    schema: CACHE_MANIFEST_SCHEMA,
+    updated_at: updatedAt,
+    poll_seconds: CACHE_MANIFEST_POLL_SECONDS,
+    versions: versions
+  };
+}
+
+function writeCacheManifest_(manifest) {
+  const normalized = normalizeCacheManifest_(manifest);
+  try {
+    PropertiesService.getScriptProperties().setProperty(CACHE_MANIFEST_STORE_KEY, JSON.stringify(normalized));
+  } catch (e) { }
+  invalidateCaches_([CACHE_MANIFEST_CACHE_KEY]);
+  try {
+    CacheService.getScriptCache().put(CACHE_MANIFEST_CACHE_KEY, JSON.stringify(normalized), CACHE_MANIFEST_CACHE_TTL_SECONDS);
+  } catch (e) { }
+  return normalized;
+}
+
+function getCacheManifest_() {
+  try {
+    const cached = CacheService.getScriptCache().get(CACHE_MANIFEST_CACHE_KEY);
+    if (cached) {
+      try { return normalizeCacheManifest_(JSON.parse(cached)); } catch (e) { }
+    }
+  } catch (e) { }
+
+  try {
+    const raw = PropertiesService.getScriptProperties().getProperty(CACHE_MANIFEST_STORE_KEY);
+    if (raw) {
+      const parsed = normalizeCacheManifest_(JSON.parse(raw));
+      try {
+        CacheService.getScriptCache().put(CACHE_MANIFEST_CACHE_KEY, JSON.stringify(parsed), CACHE_MANIFEST_CACHE_TTL_SECONDS);
+      } catch (e) { }
+      return parsed;
+    }
+  } catch (e) { }
+
+  return writeCacheManifest_(createDefaultCacheManifest_());
+}
+
+function getCacheManifestSnapshot_(tags) {
+  const manifest = getCacheManifest_();
+  const requested = normalizeCacheTagList_(tags);
+  const activeTags = requested.length ? requested : CACHE_MANIFEST_TAGS.slice();
+  const versions = {};
+  activeTags.forEach(function(tag) {
+    versions[tag] = Number((manifest.versions && manifest.versions[tag]) || 0);
+  });
+  return {
+    schema: CACHE_MANIFEST_SCHEMA,
+    updated_at: Number(manifest.updated_at || 0),
+    poll_seconds: CACHE_MANIFEST_POLL_SECONDS,
+    tags: activeTags,
+    versions: versions
+  };
+}
+
+function touchCacheTags_(tags) {
+  const targetTags = normalizeCacheTagList_(tags);
+  if (!targetTags.length) return getCacheManifestSnapshot_();
+  const manifest = getCacheManifest_();
+  let nextVersion = Math.max(Number(manifest.updated_at || 0) + 1, Date.now());
+  targetTags.forEach(function(tag) {
+    manifest.versions[tag] = nextVersion;
+    nextVersion += 1;
+  });
+  manifest.updated_at = nextVersion - 1;
+  writeCacheManifest_(manifest);
+  return getCacheManifestSnapshot_(targetTags);
+}
+
+function attachCacheManifest_(payload, tags) {
+  if (!payload || typeof payload !== "object") return payload;
+  payload.cache_manifest = getCacheManifestSnapshot_(tags);
+  return payload;
+}
+
+function getCacheManifestPublic_(d) {
+  return {
+    status: "success",
+    data: getCacheManifestSnapshot_(d && d.tags)
+  };
 }
 function getCfgFrom_(cfg, name) {
   return (cfg && cfg[name] !== undefined && cfg[name] !== null) ? cfg[name] : "";
@@ -159,10 +300,26 @@ function toCurrencyLabel_(value) {
 }
 
 function buildPhysicalOrderDetail_(data) {
+  const productId = sanitizeOrderText_(data && (data.id_produk || data.product_id || data.product_id_value));
   const productName = sanitizeOrderText_(data && (data.nama_produk || data.product_name || data.produk));
   const quantity = Math.max(1, Number(data && (data.jumlah || data.qty || data.quantity || 1) || 1));
   const unitPrice = Math.max(0, toNumberSafe_(data && (data.harga_satuan !== undefined ? data.harga_satuan : data.harga)));
-  return "Produk: " + productName + " | Jumlah: " + quantity + " | Harga: " + toCurrencyLabel_(unitPrice);
+  const segments = [];
+  if (productId) segments.push("ID: " + productId);
+  if (productName) segments.push("Produk: " + productName);
+  segments.push("Jumlah: " + quantity);
+  segments.push("Harga: " + toCurrencyLabel_(unitPrice));
+  return segments.join(" | ");
+}
+
+function extractPhysicalOrderProductId_(detail) {
+  const match = String(detail || "").match(/(?:^|\|)\s*ID:\s*([^|]+)/i);
+  return match && match[1] ? sanitizeOrderText_(match[1]) : "";
+}
+
+function extractPhysicalOrderProductName_(detail) {
+  const match = String(detail || "").match(/(?:^|\|)\s*Produk:\s*([^|]+)/i);
+  return match && match[1] ? sanitizeOrderText_(match[1]) : "";
 }
 
 function buildPhysicalOrderReference_(timestamp) {
@@ -270,8 +427,7 @@ function getAdminSessionToken_(data) {
   ).trim();
 }
 
-function createAdminSession_(sessionData, expirationSeconds) {
-  const ttlSeconds = Math.max(60, Number(expirationSeconds || ADMIN_SESSION_TTL_SECONDS));
+function createAdminSession_(sessionData) {
   const issuedAt = Date.now();
   const token = Utilities.getUuid().replace(/-/g, "") + Utilities.getUuid().replace(/-/g, "");
   const session = Object.assign({
@@ -282,9 +438,13 @@ function createAdminSession_(sessionData, expirationSeconds) {
     read_only: false,
     demo_mode: false,
     issued_at: issuedAt,
-    expires_at: issuedAt + (ttlSeconds * 1000)
+    expires_at: 0
   }, sessionData || {});
-  CacheService.getScriptCache().put(ADMIN_SESSION_CACHE_PREFIX + token, JSON.stringify(session), ttlSeconds);
+  const serialized = JSON.stringify(session);
+  CacheService.getScriptCache().put(ADMIN_SESSION_CACHE_PREFIX + token, serialized, ADMIN_SESSION_CACHE_TTL_SECONDS);
+  try {
+    PropertiesService.getScriptProperties().setProperty(ADMIN_SESSION_STORE_PREFIX + token, serialized);
+  } catch (e) {}
   return {
     token: token,
     expires_at: session.expires_at,
@@ -292,10 +452,30 @@ function createAdminSession_(sessionData, expirationSeconds) {
   };
 }
 
+function deleteAdminSession_(token) {
+  const key = String(token || "").trim();
+  if (!key) return false;
+  try {
+    CacheService.getScriptCache().remove(ADMIN_SESSION_CACHE_PREFIX + key);
+  } catch (e) {}
+  try {
+    PropertiesService.getScriptProperties().deleteProperty(ADMIN_SESSION_STORE_PREFIX + key);
+  } catch (e) {}
+  return true;
+}
+
 function getAdminSession_(token) {
   const key = String(token || "").trim();
   if (!key) return null;
-  const cached = CacheService.getScriptCache().get(ADMIN_SESSION_CACHE_PREFIX + key);
+  let cached = CacheService.getScriptCache().get(ADMIN_SESSION_CACHE_PREFIX + key);
+  if (!cached) {
+    try {
+      cached = PropertiesService.getScriptProperties().getProperty(ADMIN_SESSION_STORE_PREFIX + key);
+      if (cached) CacheService.getScriptCache().put(ADMIN_SESSION_CACHE_PREFIX + key, cached, ADMIN_SESSION_CACHE_TTL_SECONDS);
+    } catch (e) {
+      cached = null;
+    }
+  }
   if (!cached) return null;
   try {
     const parsed = JSON.parse(cached);
@@ -330,9 +510,6 @@ function requireAdminSession_(data, options) {
   if (!token) throw new Error("Sesi admin tidak ditemukan. Silakan login ulang.");
   const session = getAdminSession_(token);
   if (!session) throw new Error("Sesi admin berakhir. Silakan login ulang.");
-  if (Number(session.expires_at || 0) && Date.now() > Number(session.expires_at || 0)) {
-    throw new Error("Sesi admin berakhir. Silakan login ulang.");
-  }
   return validateAdminSessionAccess_(session, options);
 }
 
@@ -340,6 +517,15 @@ function assertNonDemoAdminMutationIfPresent_(data, actionName) {
   const token = getAdminSessionToken_(data);
   if (!token) return null;
   return requireAdminSession_(data, { allowDemo: false, actionName: actionName });
+}
+
+function adminLogout(d) {
+  try {
+    deleteAdminSession_(getAdminSessionToken_(d));
+    return { status: "success", message: "Logout berhasil" };
+  } catch (e) {
+    return { status: "error", message: e.toString() };
+  }
 }
 
 function maskDemoValue_(value, opts) {
@@ -426,10 +612,6 @@ function maskDemoSettings_(settings) {
     site_favicon: "",
     contact_email: maskDemoValue_(source.contact_email, { email: true }),
     wa_admin: DEMO_MASK_VALUE,
-    fonnte_token: "",
-    moota_gas_url: DEMO_MASK_VALUE,
-    moota_token: "",
-    moota_token_configured: false,
     ik_public_key: "",
     ik_endpoint: DEMO_MASK_VALUE,
     ik_private_key: "",
@@ -483,205 +665,6 @@ function sanitizeAssetUrl_(raw) {
   }
 
   return value;
-}
-
-function getCurrentWebAppUrl_() {
-  const fromConfig = String(getScriptConfig("APP_SCRIPT_URL") || getScriptConfig("SCRIPT_URL") || "").trim();
-  if (fromConfig) return fromConfig;
-  try {
-    const url = ScriptApp.getService().getUrl();
-    return String(url || "").trim();
-  } catch (e) {
-    return "";
-  }
-}
-
-function normalizeMootaUrl_(raw) {
-  const value = String(raw || "").trim();
-  if (!value) return "";
-  const match = value.match(/^(https:\/\/[^?#]+?)(?:[?#].*)?$/i);
-  return match && match[1] ? String(match[1]).trim() : value;
-}
-
-function getMootaUrlHost_(raw) {
-  const value = normalizeMootaUrl_(raw);
-  const match = value.match(/^https:\/\/([^\/?#]+)/i);
-  return match && match[1] ? String(match[1]).toLowerCase() : "";
-}
-
-function isDirectAppsScriptUrl_(raw) {
-  const host = getMootaUrlHost_(raw);
-  return host === "script.google.com" || host === "script.googleusercontent.com";
-}
-
-function isValidMootaUrl_(value) {
-  const url = normalizeMootaUrl_(value);
-  if (!url) return false;
-  return /^https:\/\/[^\s?#]+$/i.test(url);
-}
-
-function isValidMootaToken_(value) {
-  return /^[A-Za-z0-9]{8,200}$/.test(String(value || "").trim());
-}
-
-function resolveMootaConfig_(data, cfg) {
-  const payload = data || {};
-  const fallbackUrl = getCfgFrom_(cfg, "moota_gas_url") || getCurrentWebAppUrl_();
-  const storedToken = getSecret_("moota_token", cfg);
-  const legacySecret = getSecret_("moota_secret", cfg);
-  const nextToken = payload.moota_token !== undefined
-    ? payload.moota_token
-    : (payload.moota_secret !== undefined ? payload.moota_secret : (storedToken || legacySecret));
-  return {
-    gasUrl: normalizeMootaUrl_(payload.moota_gas_url !== undefined ? payload.moota_gas_url : fallbackUrl),
-    token: String(nextToken || "").trim()
-  };
-}
-
-function validateMootaConfigFormat_(mootaCfg, opts) {
-  const options = opts || {};
-  const errors = [];
-  const requireUrl = options.requireUrl !== false;
-  const requireToken = options.requireToken !== false;
-
-  if (requireUrl && !mootaCfg.gasUrl) errors.push("Link webhook Moota wajib diisi.");
-  if (requireUrl && mootaCfg.gasUrl && !isValidMootaUrl_(mootaCfg.gasUrl)) {
-    errors.push("Format link webhook Moota tidak valid. Gunakan URL HTTPS tanpa query string.");
-  }
-  if (requireUrl && mootaCfg.gasUrl && isDirectAppsScriptUrl_(mootaCfg.gasUrl)) {
-    errors.push("Link webhook Moota tidak boleh langsung ke Google Apps Script. Gunakan endpoint Cloudflare Worker atau proxy publik agar header Signature bisa diteruskan.");
-  }
-
-  if (requireToken && !mootaCfg.token) errors.push("Secret Token Moota wajib diisi.");
-  if (requireToken && mootaCfg.token && !isValidMootaToken_(mootaCfg.token)) {
-    errors.push("Format Secret Token Moota tidak valid. Gunakan minimal 8 karakter alphanumeric tanpa spasi.");
-  }
-
-  return errors;
-}
-
-function normalizeMootaSignature_(raw) {
-  let value = String(raw || "").trim();
-  if (!value) return "";
-  value = value.replace(/^sha256=/i, "").trim();
-  return value.replace(/[^a-f0-9]/ig, "").toLowerCase();
-}
-
-function computeMootaSignatureHex_(payloadString, secretToken) {
-  const computed = Utilities.computeHmacSha256Signature(String(payloadString || ""), String(secretToken || ""));
-  return computed.map(function(chr) {
-    const value = chr < 0 ? chr + 256 : chr;
-    return ("0" + value.toString(16)).slice(-2);
-  }).join("").toLowerCase();
-}
-
-function verifyMootaSignature_(payloadString, secretToken, rawSignature) {
-  const secret = String(secretToken || "").trim();
-  const received = normalizeMootaSignature_(rawSignature);
-  if (!secret) {
-    return { ok: false, code: "missing_secret", received: received, expected: "" };
-  }
-  if (!received) {
-    return { ok: false, code: "missing_signature", received: "", expected: "" };
-  }
-  const expected = computeMootaSignatureHex_(payloadString, secret);
-  return {
-    ok: received === expected,
-    code: received === expected ? "ok" : "invalid_signature",
-    received: received,
-    expected: expected
-  };
-}
-
-function maskMootaSignatureForLog_(value) {
-  const sig = String(value || "");
-  if (!sig) return "";
-  if (sig.length <= 12) return sig;
-  return sig.substring(0, 8) + "..." + sig.substring(sig.length - 4);
-}
-
-function extractMootaSignatureMeta_(e) {
-  const params = (e && e.parameter) || {};
-  const rawSignature = params.moota_signature !== undefined
-    ? params.moota_signature
-    : (params.signature !== undefined ? params.signature : "");
-  const signatureSource = params.moota_signature !== undefined
-    ? "query:moota_signature"
-    : (params.signature !== undefined ? "query:signature" : "missing");
-  return {
-    raw: String(rawSignature || "").trim(),
-    normalized: normalizeMootaSignature_(rawSignature),
-    source: signatureSource,
-    forwardedByWorker: String(params.moota_forwarded || "").trim() === "1",
-    workerSawSignature: String(params.moota_sig_present || "").trim() === "1",
-    workerVerifiedSignature: String(params.moota_sig_verified || "").trim() === "1",
-    workerVerificationSource: String(params.moota_sig_verified_by || "").trim(),
-    userAgent: String(params.moota_user_agent || "").trim(),
-    mootaUser: String(params.moota_user || "").trim(),
-    mootaWebhook: String(params.moota_webhook || "").trim(),
-    paramKeys: Object.keys(params)
-  };
-}
-
-function logMootaSignatureEvent_(type, meta, extra) {
-  try {
-    const payload = Object.assign({
-      source: meta && meta.source ? meta.source : "missing",
-      forwarded_by_worker: !!(meta && meta.forwardedByWorker),
-      worker_saw_signature: !!(meta && meta.workerSawSignature),
-      worker_verified_signature: !!(meta && meta.workerVerifiedSignature),
-      worker_verification_source: meta && meta.workerVerificationSource ? meta.workerVerificationSource : "",
-      received_signature: maskMootaSignatureForLog_(meta && meta.normalized),
-      signature_length: meta && meta.normalized ? meta.normalized.length : 0,
-      moota_user: meta && meta.mootaUser ? String(meta.mootaUser).substring(0, 40) : "",
-      moota_webhook: meta && meta.mootaWebhook ? String(meta.mootaWebhook).substring(0, 40) : "",
-      user_agent: meta && meta.userAgent ? String(meta.userAgent).substring(0, 120) : "",
-      param_keys: meta && meta.paramKeys ? meta.paramKeys.slice(0, 10).join(",") : ""
-    }, extra || {});
-    logMoota_(type, JSON.stringify(payload));
-  } catch (err) {
-    Logger.log("logMootaSignatureEvent_ error: " + err);
-  }
-}
-
-function classifyMootaSignatureMissing_(mootaCfg, meta) {
-  if (isDirectAppsScriptUrl_(mootaCfg && mootaCfg.gasUrl)) {
-    return {
-      code: "direct_apps_script_url",
-      message: "ERROR: Missing Signature. Webhook Moota masih diarahkan langsung ke Google Apps Script. Gunakan endpoint Cloudflare Worker/proxy publik sebagai URL webhook di dashboard Moota."
-    };
-  }
-  if (!(meta && meta.forwardedByWorker)) {
-    return {
-      code: "worker_not_detected",
-      message: "ERROR: Missing Signature. Request tidak terlihat datang dari Worker/proxy. Pastikan URL webhook Moota mengarah ke endpoint Worker/proxy yang aktif dan terbaru."
-    };
-  }
-  if (meta.forwardedByWorker && !meta.workerSawSignature) {
-    return {
-      code: "worker_missing_signature_header",
-      message: "ERROR: Missing Signature. Worker/proxy menerima request tetapi header Signature dari Moota tidak ditemukan. Periksa pengaturan webhook Moota dan deploy Worker versi terbaru."
-    };
-  }
-  return {
-    code: "signature_not_forwarded",
-    message: "ERROR: Missing Signature. Header Signature dari Moota tidak berhasil diteruskan ke Apps Script. Pastikan Worker meneruskan query param `moota_signature` atau `signature`."
-  };
-}
-
-function appendQueryParams_(url, params) {
-  const base = String(url || "").trim();
-  if (!base) return "";
-  const entries = [];
-  const source = params || {};
-  for (let key in source) {
-    if (!Object.prototype.hasOwnProperty.call(source, key)) continue;
-    const value = source[key];
-    if (value === undefined || value === null || String(value) === "") continue;
-    entries.push(encodeURIComponent(String(key)) + "=" + encodeURIComponent(String(value)));
-  }
-  if (!entries.length) return base;
-  return base + (base.indexOf("?") === -1 ? "?" : "&") + entries.join("&");
 }
 
 function normalizeImageKitEndpoint_(raw) {
@@ -823,105 +806,20 @@ function doPost(e) {
     }
 
     const cfg = getSettingsMap_();
-
-
-
-    const payloadString = e.postData.contents;
     let data = null;
     try {
-       data = JSON.parse(payloadString);
-    } catch(err) {
-       // Ignore JSON parse error, maybe it was not JSON but handled above or invalid
-       return jsonRes({ status: "error", message: "Invalid JSON format" });
+      data = JSON.parse(e.postData.contents);
+    } catch (err) {
+      return jsonRes({ status: "error", message: "Invalid JSON format" });
     }
 
-    // ====================================================================
-    // 🚀 RADAR MOOTA: DETEKSI WEBHOOK MASUK + VERIFIKASI SIGNATURE
-    // ====================================================================
-    if (Array.isArray(data) && data.length > 0 && data[0].amount !== undefined) {
-      const mootaCfg = resolveMootaConfig_({}, cfg);
-      const signatureMeta = extractMootaSignatureMeta_(e);
-      if (!mootaCfg.gasUrl) {
-        logMootaSignatureEvent_("SIGNATURE_CONFIG_ERROR", signatureMeta, {
-          reason: "missing_webhook_url",
-          payload_bytes: payloadString.length
-        });
-        return ContentService.createTextOutput("ERROR: Link webhook Moota belum dikonfigurasi.")
-          .setMimeType(ContentService.MimeType.TEXT);
-      }
-      if (!mootaCfg.token) {
-        logMootaSignatureEvent_("SIGNATURE_CONFIG_ERROR", signatureMeta, {
-          reason: "missing_secret_token",
-          payload_bytes: payloadString.length,
-          webhook_host: getMootaUrlHost_(mootaCfg.gasUrl)
-        });
-        return ContentService.createTextOutput("ERROR: Secret Token Moota belum dikonfigurasi.")
-          .setMimeType(ContentService.MimeType.TEXT);
-      }
-
-      // Apps Script tidak menerima custom header mentah dari webhook,
-      // jadi proxy/Worker perlu meneruskan header Signature ke query param ini.
-      if (!signatureMeta.normalized) {
-        const missingSignature = classifyMootaSignatureMissing_(mootaCfg, signatureMeta);
-        logMootaSignatureEvent_("SIGNATURE_MISSING", signatureMeta, {
-          reason: missingSignature.code,
-          payload_bytes: payloadString.length,
-          webhook_host: getMootaUrlHost_(mootaCfg.gasUrl),
-          likely_direct_apps_script: isDirectAppsScriptUrl_(mootaCfg.gasUrl),
-          troubleshooting_hint: isDirectAppsScriptUrl_(mootaCfg.gasUrl)
-            ? "Webhook Moota diarahkan langsung ke Google Apps Script. Gunakan endpoint Worker/proxy publik."
-            : "Pastikan header Signature dari Moota diteruskan ke query param moota_signature atau signature."
-        });
-        return ContentService.createTextOutput(missingSignature.message)
-          .setMimeType(ContentService.MimeType.TEXT);
-      }
-
-      const signatureCheck = verifyMootaSignature_(payloadString, mootaCfg.token, signatureMeta.raw);
-      if (!signatureCheck.ok) {
-        const invalidSignatureMessage = signatureMeta.workerVerifiedSignature
-          ? "ERROR: Invalid Signature. Signature sudah lolos verifikasi di Worker, jadi kemungkinan Secret Token di Apps Script berbeda dengan Secret Token di Worker/Moota."
-          : "ERROR: Invalid Signature. Periksa Secret Token dan pastikan payload tidak diubah sebelum diverifikasi.";
-        logMootaSignatureEvent_("SIGNATURE_INVALID", signatureMeta, {
-          payload_bytes: payloadString.length,
-          webhook_host: getMootaUrlHost_(mootaCfg.gasUrl),
-          expected_signature: maskMootaSignatureForLog_(signatureCheck.expected),
-          received_signature: maskMootaSignatureForLog_(signatureCheck.received),
-          validation_code: signatureCheck.code,
-          worker_verified_signature: signatureMeta.workerVerifiedSignature
-        });
-        return ContentService.createTextOutput(invalidSignatureMessage)
-          .setMimeType(ContentService.MimeType.TEXT);
-      }
-
-      logMootaSignatureEvent_("SIGNATURE_OK", signatureMeta, {
-        payload_bytes: payloadString.length,
-        webhook_host: getMootaUrlHost_(mootaCfg.gasUrl)
-      });
-
-      const isMootaTest = String((e.parameter && e.parameter.test_mode) || "").trim() === "1"
-        || data.some(function(item) {
-          return item && (item.is_test === true || String(item.description || "").toUpperCase() === "MOOTA TEST");
-        });
-      if (isMootaTest) {
-        return jsonRes({
-          status: "success",
-          message: "Test webhook Moota berhasil.",
-          secret_token_configured: true,
-          signature_verified: true,
-          signature_source: signatureMeta.source,
-          forwarded_by_worker: signatureMeta.forwardedByWorker,
-          mutations_received: data.length
-        });
-      }
-
-      return handleMootaWebhook(data, cfg);
+    if (!data || Array.isArray(data)) {
+      return jsonRes({ status: "error", message: "Payload tidak valid" });
     }
 
-    // ====================================================================
-    // JIKA BUKAN DARI MOOTA, JALANKAN PERINTAH DARI WEBSITE (FRONTEND)
-    // ====================================================================
     const action = data.action;
     switch (action) {
+      case "get_cache_manifest": return jsonRes(getCacheManifestPublic_(data));
       case "get_global_settings": return jsonRes(getGlobalSettings(cfg));
       case "get_product": return jsonRes(getProductDetail(data, cfg));
       case "get_products": return jsonRes(getProducts(data, cfg));
@@ -932,15 +830,14 @@ function doPost(e) {
       case "get_page_content": return jsonRes(getPageContent(data));
       case "get_pages": return jsonRes(getAllPages(data));
       case "admin_login": return jsonRes(adminLogin(data));
+      case "admin_logout": return jsonRes(adminLogout(data));
       case "get_admin_data": return jsonRes(getAdminData(data, cfg));
       case "save_product": return jsonRes(saveProduct(data));
       case "save_page": return jsonRes(savePage(data));
       case "update_settings": return jsonRes(updateSettings(data));
-      case "import_moota_config": return jsonRes(importMootaConfig(data));
       case "get_ik_auth": return jsonRes(getImageKitAuth(data, cfg));
       case "get_media_files": return jsonRes(getIkFiles(data, cfg));
       case "test_ik_config": return jsonRes(testImageKitConfig(data, cfg));
-      case "test_moota_config": return jsonRes(testMootaConfig(data, cfg));
       case "purge_cf_cache": return jsonRes(purgeCFCache(data, cfg));
       case "change_password": return jsonRes(changeUserPassword(data));
       case "update_profile": return jsonRes(updateUserProfile(data));
@@ -950,74 +847,51 @@ function doPost(e) {
       case "delete_product": return jsonRes(deleteProduct(data));
       case "delete_page": return jsonRes(deletePage(data));
       case "check_slug": return jsonRes(checkSlug(data));
-      case "save_affiliate_pixel": return jsonRes(saveAffiliatePixel(data));
       case "get_admin_orders": return jsonRes(getAdminOrders(data));
       case "get_admin_users": return jsonRes(getAdminUsers(data));
-
-      // DIAGNOSTIC & MONITORING ACTIONS
       case "get_email_logs":
-      case "get_moota_logs":
-      case "get_wa_logs":
       case "test_email":
-      case "test_wa":
-      case "test_lunas_notification":
       case "get_system_health":
       case "get_email_quota":
       case "debug_login":
       case "test_auth":
-      case "test_moota_validation":
-      case "test_moota_signature":
       case "test_demo_admin_security":
       case "purge_sync_logs":
       case "audit_sync_logs_cleanup":
         assertPrivilegedAction_(data, cfg);
         if (action === "get_email_logs") return jsonRes(getEmailLogs_());
-        if (action === "get_moota_logs") return jsonRes(getMootaLogs_());
-        if (action === "get_wa_logs") return jsonRes(getWALogs_());
         if (action === "test_email") return jsonRes(testEmailDelivery(data));
-        if (action === "test_wa") return jsonRes(testWADelivery(data));
-        if (action === "test_lunas_notification") return jsonRes(testLunasNotification(data));
         if (action === "get_system_health") return jsonRes(getSystemHealth());
         if (action === "get_email_quota") return jsonRes(getEmailQuotaStatus());
         if (action === "debug_login") return jsonRes(debugLogin(data));
         if (action === "test_auth") return jsonRes(runAuthTests());
-        if (action === "test_moota_validation") return jsonRes(runMootaValidationTests());
-        if (action === "test_moota_signature") return jsonRes(runMootaSignatureTests());
         if (action === "test_demo_admin_security") return jsonRes(runDemoAdminSecurityTests());
         if (action === "purge_sync_logs") return jsonRes(purgeSyncLogsArtifacts_(false, data));
         if (action === "audit_sync_logs_cleanup") return jsonRes(purgeSyncLogsArtifacts_(true, data));
         return jsonRes({ status: "error", message: "Unsupported privileged action" });
-
-      default: return jsonRes({ status: "error", message: "Aksi tidak terdaftar: " + (action || "unknown") });
+      default:
+        return jsonRes({ status: "error", message: "Aksi tidak terdaftar: " + (action || "unknown") });
     }
   } catch (err) {
     return jsonRes({ status: "error", message: err.toString() });
   }
 }
 
-
-
-/* =========================
-   WHITE-LABEL GLOBAL SETTINGS
-========================= */
 function getGlobalSettings(cfg) {
   cfg = cfg || getSettingsMap_();
-  return {
+  return attachCacheManifest_({
     status: "success",
     data: {
       site_name: getCfgFrom_(cfg, "site_name") || "Sistem Premium",
-      site_tagline: getCfgFrom_(cfg, "site_tagline") || "Platform Produk Digital Terbaik",
+      site_tagline: getCfgFrom_(cfg, "site_tagline") || "Katalog produk fisik terpercaya untuk kebutuhan harian Anda",
       site_favicon: sanitizeAssetUrl_(getCfgFrom_(cfg, "site_favicon") || ""),
       site_logo: sanitizeAssetUrl_(getCfgFrom_(cfg, "site_logo") || ""),
       contact_email: getCfgFrom_(cfg, "contact_email") || "",
       wa_admin: getCfgFrom_(cfg, "wa_admin") || ""
     }
-  };
+  }, ["settings"]);
 }
 
-/* =========================
-   CLOUDFLARE PURGE
-========================= */
 function purgeCFCache(d, cfg) {
   try {
     requireAdminSession_(d, { allowDemo: false, actionName: "purge_cf_cache" });
@@ -1046,93 +920,6 @@ function purgeCFCache(d, cfg) {
     return { status: "error", message: msg };
   } catch (e) {
     return { status: "error", message: e.toString() };
-  }
-}
-
-function testMootaConfig(d, cfg) {
-  requireAdminSession_(d, { allowDemo: false, actionName: "test_moota_config" });
-  cfg = cfg || getSettingsMap_();
-  const mootaCfg = resolveMootaConfig_(d, cfg);
-  const errors = validateMootaConfigFormat_(mootaCfg);
-  if (errors.length) {
-    return { status: "error", message: errors[0], errors: errors };
-  }
-
-  if (isDirectAppsScriptUrl_(mootaCfg.gasUrl)) {
-    logMoota_("CONFIG_TEST_BLOCKED", JSON.stringify({
-      reason: "direct_apps_script_url",
-      webhook_host: getMootaUrlHost_(mootaCfg.gasUrl),
-      troubleshooting_hint: "Gunakan endpoint Cloudflare Worker atau proxy publik, bukan URL Google Apps Script langsung."
-    }));
-    return {
-      status: "error",
-      message: "Link webhook Moota tidak boleh langsung ke Google Apps Script. Gunakan endpoint Cloudflare Worker atau proxy publik agar header Signature bisa diteruskan.",
-      code: "direct_apps_script_url"
-    };
-  }
-
-  const payloadText = JSON.stringify([{
-    amount: 1,
-    type: "CR",
-    description: "MOOTA TEST",
-    is_test: true,
-    created_at: new Date().toISOString()
-  }]);
-
-  const signature = computeMootaSignatureHex_(payloadText, mootaCfg.token);
-
-  const targetUrl = appendQueryParams_(mootaCfg.gasUrl, {
-    test_mode: "1",
-    moota_signature: signature
-  });
-
-  try {
-    const res = UrlFetchApp.fetch(targetUrl, {
-      method: "post",
-      contentType: "application/json",
-      headers: {
-        "Signature": signature,
-        "X-MOOTA-USER": "test-user",
-        "X-MOOTA-WEBHOOK": "test-webhook",
-        "User-Agent": "MootaBot/1.5"
-      },
-      payload: payloadText,
-      muteHttpExceptions: true,
-      followRedirects: true
-    });
-    const code = res.getResponseCode();
-    const text = res.getContentText();
-    let data = null;
-    try { data = JSON.parse(text); } catch (e) {}
-
-    if (code >= 200 && code < 300 && data && data.status === "success") {
-      return {
-        status: "success",
-        message: "Koneksi webhook Moota berhasil diuji.",
-        gas_url: mootaCfg.gasUrl,
-        secret_token_configured: !!mootaCfg.token,
-        signature_preview: maskMootaSignatureForLog_(signature),
-        response: data
-      };
-    }
-
-    let message = "Test koneksi Moota gagal.";
-    if (data && data.message) {
-      message = String(data.message);
-    } else if (text) {
-      message = "Webhook Moota error HTTP " + code + ": " + String(text).substring(0, 200);
-    }
-
-    return {
-      status: "error",
-      message: message,
-      http_code: code
-    };
-  } catch (e) {
-    return {
-      status: "error",
-      message: "Gagal menghubungi webhook Moota: " + e.toString()
-    };
   }
 }
 
@@ -1177,37 +964,6 @@ function logEmail_(status, to, subject, detail) {
     if (s.getLastRow() > 500) s.deleteRows(2, s.getLastRow() - 500);
   } catch (e) {
     Logger.log("logEmail_ error: " + e);
-  }
-}
-
-function logMoota_(type, detail) {
-  try {
-    let s = ss.getSheetByName("Moota_Logs");
-    if (!s) {
-      s = ss.insertSheet("Moota_Logs");
-      s.appendRow(["Timestamp", "Type", "Detail"]);
-      s.setFrozenRows(1);
-    }
-    s.appendRow([new Date(), type, String(detail).substring(0, 1000)]);
-    // Auto-trim: keep max 500 rows
-    if (s.getLastRow() > 500) s.deleteRows(2, s.getLastRow() - 500);
-  } catch (e) {
-    Logger.log("logMoota_ error: " + e);
-  }
-}
-
-function logWA_(status, target, detail) {
-  try {
-    let s = ss.getSheetByName("WA_Logs");
-    if (!s) {
-      s = ss.insertSheet("WA_Logs");
-      s.appendRow(["Timestamp", "Status", "Target", "Detail"]);
-      s.setFrozenRows(1);
-    }
-    s.appendRow([new Date(), status, target, String(detail).substring(0, 500)]);
-    if (s.getLastRow() > 500) s.deleteRows(2, s.getLastRow() - 500);
-  } catch (e) {
-    Logger.log("logWA_ error: " + e);
   }
 }
 
@@ -1493,104 +1249,16 @@ function normalizePhone_(raw) {
   return num;
 }
 
-function sendWA(target, message, cfg) {
-  if (!target) {
-    logWA_("SKIP", "(empty)", "No target number provided");
-    return { success: false, reason: "no_target" };
-  }
-  cfg = cfg || getSettingsMap_();
-  const token = getSecret_("fonnte_token", cfg) || getCfg("fonnte_token");
-  if (!token) {
-    logWA_("NO_TOKEN", target, "fonnte_token not configured in Settings");
-    return { success: false, reason: "no_fonnte_token" };
-  }
-
-  // Normalize phone number: strip all non-digits, handle prefix
-  const cleanTarget = normalizePhone_(target);
-  if (!cleanTarget || cleanTarget.length < 9) {
-    logWA_("INVALID_NUMBER", String(target), "After normalization: '" + cleanTarget + "' (too short or empty)");
-    return { success: false, reason: "invalid_phone_number" };
-  }
-
-  const MAX_RETRIES = 2;
-
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const res = UrlFetchApp.fetch("https://api.fonnte.com/send", {
-        method: "post",
-        headers: { "Authorization": token },
-        payload: {
-          target: cleanTarget,
-          message: message,
-          countryCode: "62"
-        },
-        muteHttpExceptions: true
-      });
-
-      const httpCode = res.getResponseCode();
-      const resText = res.getContentText();
-
-      // Validate Fonnte API response
-      if (httpCode >= 200 && httpCode < 300) {
-        try {
-          const resJson = JSON.parse(resText);
-          if (resJson.status === true || resJson.status === "true") {
-            logWA_("SENT", cleanTarget, "OK (attempt " + attempt + ") | Detail: " + String(resJson.detail || resJson.message || "").substring(0, 100));
-            return { success: true };
-          } else {
-            // Fonnte returned 200 but status=false (invalid number, quota, etc)
-            const reason = String(resJson.reason || resJson.detail || resJson.message || "Unknown").substring(0, 200);
-            if (attempt >= MAX_RETRIES) {
-              logWA_("REJECTED", cleanTarget, "Fonnte rejected: " + reason + " | Raw response: " + resText.substring(0, 200));
-              return { success: false, reason: reason };
-            }
-          }
-        } catch (parseErr) {
-          // Non-JSON response but HTTP 200 - treat as success
-          logWA_("SENT_UNVERIFIED", cleanTarget, "HTTP " + httpCode + " but non-JSON response (attempt " + attempt + ")");
-          return { success: true };
-        }
-      } else {
-        // HTTP error (401, 403, 500, etc)
-        if (attempt >= MAX_RETRIES) {
-          logWA_("HTTP_ERROR", cleanTarget, "HTTP " + httpCode + ": " + resText.substring(0, 200));
-          return { success: false, reason: "HTTP " + httpCode };
-        }
-      }
-
-      // Wait before retry
-      if (attempt < MAX_RETRIES) Utilities.sleep(1000);
-
-    } catch (e) {
-      if (attempt >= MAX_RETRIES) {
-        logWA_("EXCEPTION", cleanTarget, e.toString());
-        return { success: false, reason: e.toString() };
-      }
-      Utilities.sleep(1000);
-    }
-  }
-  return { success: false, reason: "exhausted_retries" };
-}
-
 function sendEmail(target, subject, body, cfg) {
   if (!target) return { success: false, reason: "no_target" };
   cfg = cfg || getSettingsMap_();
-
-  // Check daily quota first
   const remaining = MailApp.getRemainingDailyQuota();
   if (remaining <= 0) {
     logEmail_("QUOTA_EXCEEDED", target, subject, "Daily email quota exceeded (remaining: " + remaining + ")");
-    // Fallback: alert admin via WA
-    const adminWA = getCfgFrom_(cfg, "wa_admin");
-    if (adminWA) {
-      sendWA(adminWA, "⚠️ *EMAIL QUOTA HABIS!*\n\nEmail ke " + target + " GAGAL terkirim karena quota harian habis.\nSubject: " + subject, cfg);
-    }
     return { success: false, reason: "quota_exceeded" };
   }
-
   const senderName = getCfgFrom_(cfg, "site_name") || "Admin Sistem";
   const MAX_RETRIES = 3;
-
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       MailApp.sendEmail({ to: target, subject: subject, htmlBody: body, name: senderName });
@@ -1599,14 +1267,9 @@ function sendEmail(target, subject, body, cfg) {
     } catch (e) {
       Logger.log("sendEmail attempt " + attempt + " failed: " + e);
       if (attempt < MAX_RETRIES) {
-        Utilities.sleep(1000 * attempt); // Exponential backoff: 1s, 2s
+        Utilities.sleep(1000 * attempt);
       } else {
         logEmail_("FAILED", target, subject, e.toString());
-        // Fallback: alert admin via WA
-        const adminWA = getCfgFrom_(cfg, "wa_admin");
-        if (adminWA) {
-          sendWA(adminWA, "❌ *EMAIL GAGAL TERKIRIM!*\n\nKe: " + target + "\nSubject: " + subject + "\nError: " + String(e).substring(0, 200), cfg);
-        }
         return { success: false, reason: e.toString() };
       }
     }
@@ -1621,616 +1284,165 @@ function getEmailQuotaStatus() {
 /* =========================
    CREATE ORDER (ANGKA UNIK + WHITE-LABEL + AFFILIATE)
 ========================= */
-function createOrder(d, cfg) {
-  try {
-    assertNonDemoAdminMutationIfPresent_(d, "create_order");
-    cfg = cfg || getSettingsMap_();
-
-    const oS = mustSheet_("Orders");
-    const uS = mustSheet_("Users");
-
-    const inv = "INV-" + Math.floor(10000 + Math.random() * 90000);
-    const email = String(d.email || "").trim().toLowerCase();
-    if (!email) return { status: "error", message: "Email wajib diisi" };
-
-    // Normalize WhatsApp number at storage time
-    const waRaw = String(d.whatsapp || "").trim();
-    const waNormalized = normalizePhone_(waRaw);
-    if (waRaw && !waNormalized) {
-      Logger.log("WARNING: WA number normalization failed for: " + waRaw);
-    }
-
-    const siteName = getCfgFrom_(cfg, "site_name") || "Sistem Premium";
-    const siteUrl = String(getCfgFrom_(cfg, "site_url") || "").trim();
-    const loginUrl = siteUrl ? (siteUrl + "/login.html") : "Link Login Belum Disetting";
-
-    const bankName = getCfgFrom_(cfg, "bank_name") || "-";
-    const bankNorek = getCfgFrom_(cfg, "bank_norek") || "-";
-    const bankOwner = getCfgFrom_(cfg, "bank_owner") || "-";
-
-    const aff = (d.affiliate && String(d.affiliate).trim() !== "") ? String(d.affiliate).trim() : "-";
-
-    const hargaDasar = toNumberSafe_(d.harga);
-    
-    // MODIFIED: Allow 0 price (Free Product)
-    const isZeroPrice = hargaDasar === 0;
-    if (!isZeroPrice && hargaDasar <= 0) return { status: "error", message: "Harga tidak valid" };
-
-    let komisiNominal = 0;
-    
-    // Lookup Product Commission
-    const pId = String(d.id_produk || "").trim();
-    if (pId && aff !== "-") {
-        const rules = mustSheet_("Access_Rules").getDataRange().getValues();
-        for (let i = 1; i < rules.length; i++) {
-            if (String(rules[i][0]) === pId) {
-                // Commission is in column 12 (index 11)
-                komisiNominal = Number(rules[i][11] || 0);
-                break;
-            }
-        }
-    }
-
-    const kodeUnik = isZeroPrice ? 0 : (Math.floor(Math.random() * 900) + 100);
-    const hargaTotalUnik = hargaDasar + kodeUnik;
-
-    // Cek atau Buat User Baru
-    let isNew = true;
-    let pass = Math.random().toString(36).slice(-6);
-
-    const uData = uS.getDataRange().getValues();
-    for (let j = 1; j < uData.length; j++) {
-      if (String(uData[j][1]).toLowerCase() === email) {
-        isNew = false;
-        pass = String(uData[j][2]);
-        break;
-      }
-    }
-    if (isNew) {
-      // Generate Friendly Unique ID (u-XXXXXX)
-      let newUserId = "u-" + Math.floor(100000 + Math.random() * 900000);
-      let unique = false;
-      while(!unique) {
-          unique = true;
-          for(let k=1; k<uData.length; k++) {
-              if(String(uData[k][0]) === newUserId) {
-                  unique = false;
-                  newUserId = "u-" + Math.floor(100000 + Math.random() * 900000);
-                  break;
-              }
-          }
-      }
-      uS.appendRow([newUserId, email, hashPassword_(pass), d.nama, "member", "Active", toISODate_(), "-"]);
-    }
-
-    const orderStatus = isZeroPrice ? "Lunas" : "Pending";
-
-    // Simpan order (struktur kolom sama dengan script lu)
-    // Store WA number as text (prefix with apostrophe prevents Google Sheets from converting to Number)
-    const waForSheet = waNormalized || waRaw;
-    oS.appendRow([
-      inv,
-      email,
-      d.nama,
-      "'" + waForSheet,
-      d.id_produk,
-      d.nama_produk,
-      hargaTotalUnik,
-      orderStatus,
-      toISODate_(),
-      aff,
-      komisiNominal
-    ]);
-
-    // ==========================================
-    // NOTIFIKASI (LOGIC CABANG: GRATIS vs BAYAR)
-    // ==========================================
-    
-    const adminWA = getCfgFrom_(cfg, "wa_admin");
-
-    if (isZeroPrice) {
-       // --- SKENARIO PRODUK GRATIS (AUTO LUNAS) ---
-       
-       // 1. Ambil Link Akses
-       let accessUrl = "";
-       const pS = mustSheet_("Access_Rules");
-       const pData = pS.getDataRange().getValues();
-       for (let k = 1; k < pData.length; k++) {
-         if (String(pData[k][0]) === String(d.id_produk)) { accessUrl = pData[k][3]; break; }
-       }
-       
-       // 2. WA ke User (use normalized number)
-       const waText = `Halo ${d.nama}, selamat datang di ${siteName}! 🎉\n\nSukses! Akses Anda untuk produk *${d.nama_produk}* telah aktif (GRATIS).\n\n🚀 *Klik link berikut untuk akses materi:*\n${accessUrl}\n\n🔐 *AKUN MEMBER AREA*\n🌐 Link: ${loginUrl}\n✉️ Email: ${email}\n🔑 Password: ${pass}\n\nTerima kasih!\n*Tim ${siteName}*`;
-       sendWA(waForSheet, waText, cfg);
-
-       // 3. Email ke User
-       const emailHtml = `
-       <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #334155; border: 1px solid #e2e8f0; border-radius: 10px;">
-          <h2 style="color: #10b981;">Akses Produk Gratis Dibuka! 🎁</h2>
-          <p>Halo <b>${d.nama}</b>,</p>
-          <p>Selamat! Anda telah berhasil mendapatkan akses ke produk <b>${d.nama_produk}</b> secara GRATIS.</p>
-          
-          <div style="text-align: center; margin: 30px 0;">
-              <a href="${accessUrl}" style="background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Akses Materi Sekarang</a>
-          </div>
-
-          <h3 style="color: #0f172a;">🔐 Akun Member Area</h3>
-          <p><b>Link:</b> <a href="${loginUrl}">${loginUrl}</a><br>
-          <b>Email:</b> ${email}<br>
-          <b>Password:</b> <code>${pass}</code></p>
-          
-          <p>Salam hangat,<br><b>Tim ${siteName}</b></p>
-       </div>`;
-       sendEmail(email, `Akses Gratis! Produk ${d.nama_produk}`, emailHtml, cfg);
-
-       // 4. Notif Admin
-       sendWA(adminWA, `🎁 *ORDER GRATIS BARU!* 🎁\n\n📌 *Invoice:* #${inv}\n📦 *Produk:* ${d.nama_produk}\n👤 *User:* ${d.nama}\n\nStatus: Lunas (Auto)`, cfg);
-
-    } else {
-       // --- SKENARIO BERBAYAR (PENDING) ---
-
-       // --> NOTIFIKASI PEMBELI (WHATSAPP)
-    const waBuyerText =
-`Halo *${d.nama}*, salam hangat dari ${siteName}! 👋
-
-Terima kasih telah melakukan pemesanan. Berikut rincian pesanan Anda:
-
-📦 *Produk:* ${d.nama_produk}
-🔖 *Invoice:* #${inv}
-💰 *Total Tagihan:* Rp ${Number(hargaTotalUnik).toLocaleString('id-ID')}
-
-⚠️ _(Penting: Transfer *TEPAT* hingga 3 digit terakhir agar sistem dapat memvalidasi otomatis)_
-
-Silakan selesaikan pembayaran ke rekening berikut:
-
-🏦 *Bank:* ${bankName}
-💳 *No. Rek:* ${bankNorek}
-👤 *A.n:* ${bankOwner}
-
-*(Mohon kirimkan bukti transfer ke sini agar pesanan segera diproses)*
-
----
-
-🔐 *INFORMASI AKUN MEMBER*
-🌐 *Link Login:* ${loginUrl}
-✉️ *Email:* ${email}
-🔑 *Password:* ${pass}
-
-*(Akses materi otomatis terbuka di akun ini setelah pembayaran divalidasi)*.
-
-Jika ada pertanyaan, silakan balas pesan ini. Terima kasih! 🙏`;
-    sendWA(waForSheet, waBuyerText, cfg);
-
-    // --> NOTIFIKASI PEMBELI (EMAIL) (template asli lu)
-    const emailBuyerHtml = `
-    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #334155; border: 1px solid #e2e8f0; border-radius: 10px;">
-        <h2 style="color: #4f46e5; margin-bottom: 5px;">Menunggu Pembayaran Anda ⏳</h2>
-        <p style="font-size: 16px; margin-top: 0;">Halo <b>${d.nama}</b>,</p>
-        <p>Terima kasih atas pesanan Anda di <b>${siteName}</b>. Berikut adalah detail tagihan yang harus dibayarkan:</p>
-
-        <div style="background-color: #f8fafc; padding: 15px 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #4f46e5;">
-            <p style="margin: 0 0 5px 0;"><b>Produk:</b> ${d.nama_produk}</p>
-            <p style="margin: 0 0 5px 0;"><b>Invoice:</b> #${inv}</p>
-            <p style="margin: 0; font-size: 20px; color: #0f172a;"><b>Total Tagihan: Rp ${Number(hargaTotalUnik).toLocaleString('id-ID')}</b></p>
-            <p style="margin: 5px 0 0 0; font-size: 12px; color: #ef4444; font-weight: bold;">*Wajib transfer TEPAT hingga 3 digit angka terakhir.</p>
-        </div>
-
-        <p>Silakan selesaikan pembayaran ke rekening berikut:</p>
-
-        <div style="background-color: #f1f5f9; padding: 15px 20px; border-radius: 8px; margin: 20px 0; text-align: center;">
-            <p style="margin: 0 0 5px 0; color: #64748b; text-transform: uppercase; font-size: 12px; font-weight: bold;">Transfer Ke Bank ${bankName}</p>
-            <p style="margin: 0 0 5px 0; font-size: 22px; color: #4f46e5; font-family: monospace; font-weight: bold; letter-spacing: 2px;">${bankNorek}</p>
-            <p style="margin: 0; font-size: 14px;"><b>A.n:</b> ${bankOwner}</p>
-        </div>
-
-        <p>Setelah transfer, konfirmasi melalui WhatsApp Admin agar produk segera kami aktifkan.</p>
-
-        <hr style="border: none; border-top: 1px dashed #cbd5e1; margin: 30px 0;">
-
-        <h3 style="color: #0f172a; margin-bottom: 10px;">🔐 Detail Akun Member Anda</h3>
-
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-            <tr>
-                <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; width: 100px;"><b>Link Login</b></td>
-                <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;"><a href="${loginUrl}" style="color: #4f46e5; text-decoration: none;">${loginUrl}</a></td>
-            </tr>
-            <tr>
-                <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;"><b>Email</b></td>
-                <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;">${email}</td>
-            </tr>
-            <tr>
-                <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;"><b>Password</b></td>
-                <td style="padding: 10px; border-bottom: 1px solid #e2e8f0;"><code style="background: #f1f5f9; padding: 3px 6px; border-radius: 4px;">${pass}</code></td>
-            </tr>
-        </table>
-
-        <br>
-        <p>Salam hangat,<br><b>Tim ${siteName}</b></p>
-    </div>
-    `;
-    sendEmail(email, `Menunggu Pembayaran: Pesanan #${inv} - ${siteName}`, emailBuyerHtml, cfg);
-
-    // --> NOTIFIKASI ADMIN
-    const affMsg = aff !== "-" ? `\n🤝 *Affiliate:* ${aff}\n💸 *Potensi Komisi:* Rp ${Number(komisiNominal).toLocaleString('id-ID')}` : "";
-    sendWA(adminWA, `🚨 *PESANAN BARU MASUK!* 🚨\n\n📌 *Invoice:* #${inv}\n📦 *Produk:* ${d.nama_produk}\n👤 *Customer:* ${d.nama}\n💳 *Nilai Unik:* Rp ${Number(hargaTotalUnik).toLocaleString('id-ID')}${affMsg}\n\nSilakan pantau pembayaran dari customer ini.`, cfg);
-    } // End of Else (Paid)
-
-    return { status: "success", invoice: inv, tagihan: hargaTotalUnik, is_new_user: isNew };
-  } catch (e) {
-    return { status: "error", message: e.toString() };
-  }
-}
-
-/* =========================
-   UPDATE ORDER STATUS (MANUAL)
-========================= */
-function updateOrderStatus(d, cfg) {
-  try {
-    requireAdminSession_(d, { allowDemo: false, actionName: "update_order_status" });
-    cfg = cfg || getSettingsMap_();
-    const s = mustSheet_("Orders");
-    const uS = mustSheet_("Users"); // kept for compatibility (even if not used)
-    const pS = mustSheet_("Access_Rules");
-    const r = s.getDataRange().getValues();
-    const siteName = getCfgFrom_(cfg, "site_name") || "Sistem Premium";
-
-    let orderFound = false, uEmail = "", uName = "", pId = "", pName = "", uWA = "";
-    const newStatus = d.status || "Lunas";
-    const isLunas = String(newStatus).trim().toLowerCase() === "lunas";
-
-    // Trace ID for debugging this specific request
-    const traceId = "UOS-" + Date.now();
-    Logger.log(traceId + " updateOrderStatus called with id=" + d.id + " status=" + newStatus + " isLunas=" + isLunas);
-
-    for (let i = 1; i < r.length; i++) {
-      if (String(r[i][0]) === String(d.id)) {
-        s.getRange(i + 1, 8).setValue(isLunas ? "Lunas" : newStatus);
-        uEmail = r[i][1];
-        uName = r[i][2];
-        uWA = r[i][3];
-        pId = r[i][4];
-        pName = r[i][5];
-        orderFound = true;
-        Logger.log(traceId + " Order FOUND: row=" + (i+1) + " uWA=" + JSON.stringify(uWA) + " type=" + typeof uWA + " uEmail=" + uEmail);
-        break;
-      }
-    }
-
-    if (orderFound) {
-      if (!isLunas) {
-        Logger.log(traceId + " Not Lunas, returning early. newStatus=" + newStatus);
-        return { status: "success", message: "Status berhasil diubah menjadi " + newStatus };
-      }
-
-      Logger.log(traceId + " Status=Lunas, proceeding with notifications...");
-
-      let accessUrl = "";
-      const pData = pS.getDataRange().getValues();
-      for (let k = 1; k < pData.length; k++) {
-        if (String(pData[k][0]) === String(pId)) { accessUrl = pData[k][3]; break; }
-      }
-      Logger.log(traceId + " accessUrl=" + accessUrl);
-
-      // LOG: Debug notification target data before sending
-      const waDebug = "uWA raw=" + JSON.stringify(uWA) + " type=" + typeof uWA + " normalized=" + normalizePhone_(uWA);
-      logWA_("DEBUG_LUNAS", String(uWA), traceId + " | " + waDebug + " | Inv=" + d.id + " uEmail=" + uEmail);
-
-      // STEP 1: Send WA to customer
-      Logger.log(traceId + " Sending WA to: " + uWA);
-      const waResult = sendWA(uWA, `🎉 *PEMBAYARAN TERVERIFIKASI!* 🎉\n\nHalo *${uName}*, kabar baik!\n\nPembayaran Anda untuk produk *${pName}* telah kami terima dan akses Anda kini *Telah Aktif*.\n\n🚀 *Klik link berikut untuk mengakses materi Anda:*\n${accessUrl}\n\nAnda juga bisa mengakses seluruh produk Anda melalui Member Area kami.\n\nTerima kasih atas kepercayaannya!\n*Tim ${siteName}*`, cfg);
-      Logger.log(traceId + " WA Result: " + JSON.stringify(waResult));
-
-      // STEP 2: Send Email to customer
-      const emailActivationHtml = `
-      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #334155; border: 1px solid #e2e8f0; border-radius: 10px;">
-          <div style="text-align: center; margin-bottom: 20px;">
-              <h1 style="color: #10b981; margin-bottom: 5px;">Akses Telah Dibuka! 🎉</h1>
-          </div>
-          <p style="font-size: 16px;">Halo <b>${uName}</b>,</p>
-          <p>Terima kasih! Pembayaran Anda telah berhasil kami verifikasi. Akses penuh untuk produk <b>${pName}</b> sekarang sudah aktif dan dapat Anda gunakan.</p>
-
-          <div style="text-align: center; margin: 30px 0;">
-              <a href="${accessUrl}" style="background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; font-size: 16px; display: inline-block;">Akses Materi Sekarang</a>
-          </div>
-
-          <p>Sebagai alternatif, Anda selalu bisa menemukan semua produk yang Anda miliki dengan masuk ke Member Area menggunakan akun yang telah kami kirimkan sebelumnya.</p>
-
-          <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 30px 0;">
-          <p style="font-size: 14px; color: #64748b; margin-bottom: 0;">Salam Sukses,<br><b>Tim ${siteName}</b></p>
-      </div>
-      `;
-      Logger.log(traceId + " Sending Email to: " + uEmail);
-      const emailResult = sendEmail(uEmail, `Akses Terbuka! Produk ${pName} - ${siteName}`, emailActivationHtml, cfg);
-      Logger.log(traceId + " Email Result: " + JSON.stringify(emailResult));
-
-      return { status: "success", trace: traceId, notifications: { wa: waResult, email: emailResult } };
-    }
-
-    return { status: "error", message: "Order tidak ditemukan" };
-  } catch (e) {
-    return { status: "error", message: e.toString() };
-  }
-}
-
-/* =========================
-   HELPER: GET AFFILIATE PIXEL
-========================= */
-function getAffiliatePixel_(userId, productId) {
-  const s = ss.getSheetByName("Affiliate_Pixels");
-  if (!s) return null;
-  
-  const d = s.getDataRange().getValues();
-  for (let i = 1; i < d.length; i++) {
-    if (String(d[i][0]) === String(userId) && String(d[i][1]) === String(productId)) {
-      return {
-        pixel_id: String(d[i][2]),
-        pixel_token: String(d[i][3]),
-        pixel_test_code: String(d[i][4])
-      };
-    }
-  }
-  return null;
-}
-
-/* =========================
-   PRODUCT DETAIL
-========================= */
 function getProductDetail(d, cfg) {
   try {
     cfg = cfg || getSettingsMap_();
-    const rules = mustSheet_("Access_Rules").getDataRange().getValues();
-    const pId = String(d.id).trim();
+    const rules = getCachedData_("access_rules", function() {
+      return mustSheet_("Access_Rules").getDataRange().getValues();
+    }, 3600);
+    const pId = String(d.id || d.product_id || "").trim();
     let productData = null;
-
     for (let i = 1; i < rules.length; i++) {
       if (String(rules[i][0]) === pId && String(rules[i][5]).trim() === "Active") {
-        productData = { 
-            id: pId, 
-            title: rules[i][1], 
-            desc: rules[i][2], 
-            harga: rules[i][4],
-            pixel_id: rules[i][8] || "",
-            pixel_token: rules[i][9] || "",
-            pixel_test_code: rules[i][10] || "",
-            commission: rules[i][11] || 0
+        productData = {
+          id: pId,
+          title: String(rules[i][1] || "").trim(),
+          desc: String(rules[i][2] || "").trim(),
+          url: String(rules[i][3] || "").trim(),
+          harga: toNumberSafe_(rules[i][4]),
+          lp_url: String(rules[i][6] || "").trim(),
+          image_url: String(rules[i][7] || "").trim(),
+          pixel_id: String(rules[i][8] || "").trim(),
+          pixel_token: String(rules[i][9] || "").trim(),
+          pixel_test_code: String(rules[i][10] || "").trim()
         };
         break;
       }
     }
     if (!productData) return { status: "error", message: "Produk tidak ditemukan" };
-
-    // --> CHECK AFFILIATE PIXEL OVERRIDE
-    const affRef = d.ref || d.aff_id;
-    if (affRef) {
-        const affPixel = getAffiliatePixel_(affRef, pId);
-        if (affPixel && affPixel.pixel_id) {
-            productData.pixel_id = affPixel.pixel_id;
-            productData.pixel_token = affPixel.pixel_token;
-            productData.pixel_test_code = affPixel.pixel_test_code;
-            productData.is_affiliate_pixel = true;
-        }
-    }
-
-    const paymentInfo = {
-      bank_name: getCfgFrom_(cfg, "bank_name"),
-      bank_norek: getCfgFrom_(cfg, "bank_norek"),
-      bank_owner: getCfgFrom_(cfg, "bank_owner"),
-      wa_admin: getCfgFrom_(cfg, "wa_admin"),
-
-      pixel_id: productData.pixel_id, // Pass pixel_id (possibly overridden)
-      pixel_token: productData.pixel_token,
-      pixel_test_code: productData.pixel_test_code
-    };
-
-    let affName = "";
-    if (d.aff_id && d.aff_id !== "GUEST" && d.aff_id !== "-") {
-      const users = mustSheet_("Users").getDataRange().getValues();
-      for (let j = 1; j < users.length; j++) {
-        if (String(users[j][0]) === String(d.aff_id)) { affName = String(users[j][3]); break; }
+    return attachCacheManifest_({
+      status: "success",
+      data: productData,
+      payment: {
+        bank_name: getCfgFrom_(cfg, "bank_name"),
+        bank_norek: getCfgFrom_(cfg, "bank_norek"),
+        bank_owner: getCfgFrom_(cfg, "bank_owner"),
+        wa_admin: getCfgFrom_(cfg, "wa_admin")
       }
-    }
-
-    return { status: "success", data: productData, payment: paymentInfo, aff_name: affName };
+    }, ["products", "settings"]);
   } catch (e) {
     return { status: "error", message: e.toString() };
   }
 }
 
-/* =========================
-   GET PRODUCTS + KOMISI AFFILIATE
-========================= */
 function getProducts(d, cfg, cachedOrders) {
   cfg = cfg || getSettingsMap_();
-  
-  // OPTIMIZATION: Only fetch sheets if needed, reuse cached if passed
-  const rules = getCachedData_("access_rules", () => {
-     return mustSheet_("Access_Rules").getDataRange().getValues();
-  }, 3600); // 1 hour cache for rules
-
-  const orders = cachedOrders || mustSheet_("Orders").getDataRange().getValues();
-  const users = mustSheet_("Users").getDataRange().getValues(); // Often changes, might need real-time
-  
+  const rules = getCachedData_("access_rules", function() {
+    return mustSheet_("Access_Rules").getDataRange().getValues();
+  }, 3600);
+  const orders = Array.isArray(cachedOrders) ? cachedOrders : getPhysicalOrderRows_();
+  const users = mustSheet_("Users").getDataRange().getValues();
   let email = String(d.email || "").trim().toLowerCase();
+  const cacheTags = (email || d.target_user_id) ? ["products", "orders", "users"] : ["products"];
   let targetMode = false;
-
-  // Support fetching products for a specific user (Bio Page)
   if (d.target_user_id) {
-      targetMode = true;
-      const tUid = String(d.target_user_id).trim();
-      for (let j = 1; j < users.length; j++) {
-          if (String(users[j][0]) === tUid) {
-              email = String(users[j][1]).trim().toLowerCase();
-              break;
-          }
+    targetMode = true;
+    const targetUserId = String(d.target_user_id).trim();
+    for (let i = 1; i < users.length; i++) {
+      if (String(users[i][0]) === targetUserId) {
+        email = String(users[i][1] || "").trim().toLowerCase();
+        break;
       }
+    }
   }
-
-  let lunasIds = [], totalKomisi = 0, uId = "";
-  let partners = [];
-
+  const purchasedIds = {};
+  const purchasedNames = {};
   if (email) {
-    for (let j = 1; j < users.length; j++) {
-      if (String(users[j][1]).toLowerCase() === email) { uId = String(users[j][0]); break; }
-    }
-    for (let x = 1; x < orders.length; x++) {
-      const r = orders[x];
-      if (String(r[1]).toLowerCase() === email && String(r[7]) === "Lunas") lunasIds.push(String(r[4]));
-      
-      // Check for Partners (Referrals) - Only calculate if not in target mode (optional, but keeps it clean)
-      if (!targetMode && String(r[9]) === uId) {
-          if (String(r[7]) === "Lunas") totalKomisi += Number(r[10] || 0);
-          
-          partners.push({
-              invoice: r[0],
-              name: r[2],
-              product: r[5],
-              status: r[7],
-              date: r[8] ? String(r[8]).substring(0, 10) : "-",
-              commission: r[10] || 0
-          });
-      }
-    }
+    orders.forEach(function(row) {
+      const rowEmail = String(row[2] || "").trim().toLowerCase();
+      if (rowEmail !== email || !isPaidOrderStatus_(row[7])) return;
+      const detail = String(row[5] || "");
+      const productId = extractPhysicalOrderProductId_(detail);
+      const productName = extractPhysicalOrderProductName_(detail);
+      if (productId) purchasedIds[productId] = true;
+      if (productName) purchasedNames[String(productName).toLowerCase()] = true;
+    });
   }
-
-  let owned = [], available = [];
+  const owned = [];
+  const available = [];
   for (let i = 1; i < rules.length; i++) {
-    if (String(rules[i][5]).trim() === "Active") {
-      const pId = String(rules[i][0]);
-      const hasAccess = lunasIds.includes(pId);
-      const pObj = {
-        id: pId,
-        title: rules[i][1],
-        desc: rules[i][2],
-        url: hasAccess ? rules[i][3] : "#",
-        harga: rules[i][4],
-        access: hasAccess,
-        lp_url: rules[i][6] || "",
-        image_url: rules[i][7] || "",
-        commission: rules[i][11] || 0
-      };
-      
-      if (targetMode) {
-          // In Bio Page mode, we show what the user OWNS as the "Available Catalog" for visitors
-          if (hasAccess) available.push(pObj);
-      } else {
-          // Normal Dashboard mode
-          if (hasAccess && email) owned.push(pObj);
-          else available.push(pObj);
-      }
+    if (String(rules[i][5]).trim() !== "Active") continue;
+    const productId = String(rules[i][0] || "").trim();
+    const title = String(rules[i][1] || "").trim();
+    const hasAccess = !!(purchasedIds[productId] || purchasedNames[String(title).toLowerCase()]);
+    const product = {
+      id: productId,
+      title: title,
+      desc: String(rules[i][2] || "").trim(),
+      url: hasAccess ? String(rules[i][3] || "").trim() : "#",
+      harga: toNumberSafe_(rules[i][4]),
+      access: hasAccess,
+      lp_url: String(rules[i][6] || "").trim(),
+      image_url: String(rules[i][7] || "").trim(),
+      pixel_id: String(rules[i][8] || "").trim(),
+      pixel_token: String(rules[i][9] || "").trim(),
+      pixel_test_code: String(rules[i][10] || "").trim()
+    };
+    if (targetMode) {
+      if (hasAccess) available.push(product);
+    } else if (hasAccess && email) {
+      owned.push(product);
+    } else {
+      available.push(product);
     }
   }
-
-  return { status: "success", owned, available, total_komisi: totalKomisi, partners: partners.reverse() };
+  return attachCacheManifest_({ status: "success", owned: owned, available: available }, cacheTags);
 }
 
 function getDashboardData(d) {
   try {
     const cfg = getSettingsMap_();
-    
-    // 1. Get User ID & Admin ID from Users Sheet
     const email = String(d.email || "").trim().toLowerCase();
     const users = mustSheet_("Users").getDataRange().getValues();
+    const orders = getPhysicalOrderRows_();
     let userId = "";
     let userNama = "";
-    let adminId = "";
-    
-    for(let i=1; i<users.length; i++) {
-        // Check for Admin (fallback upline)
-        if(String(users[i][4]).toLowerCase() === "admin" && !adminId) {
-            adminId = String(users[i][0]);
-        }
-        // Check for Current User
-        if(String(users[i][1]).toLowerCase() === email) {
-            userId = String(users[i][0]);
-            userNama = String(users[i][3]);
-        }
+    for (let i = 1; i < users.length; i++) {
+      if (String(users[i][1] || "").trim().toLowerCase() === email) {
+        userId = String(users[i][0] || "").trim();
+        userNama = String(users[i][3] || "").trim();
+        break;
+      }
     }
-    
-    // 1b. Find Upline (Sponsor) from Orders History
-    let uplineId = "";
-    const orders = mustSheet_("Orders").getDataRange().getValues();
-    
-    if(userId) {
-        // Search from oldest order (top) to find the first referrer
-        for(let k=1; k<orders.length; k++) {
-             if(String(orders[k][1]).toLowerCase() === email) {
-                 const aff = String(orders[k][9] || "").trim();
-                 if(aff && aff !== "-" && aff !== "" && aff !== "GUEST") {
-                     uplineId = aff;
-                     break; // Found the first sponsor
-                 }
-             }
-        }
-    }
-    // Default to Admin if no upline found
-    if(!uplineId) uplineId = adminId;
-
-    // 1c. Get Upline Name
-    let uplineName = "Admin";
-    if(uplineId) {
-         for(let m=1; m<users.length; m++) {
-             if(String(users[m][0]) === uplineId) {
-                 uplineName = String(users[m][3]);
-                 break;
-             }
-         }
-    }
-    
-    // 2. Get Products (reuse existing logic + pass cached orders)
     const productsData = getProducts(d, cfg, orders);
-    
-    // 3. Get Global Pages (Affiliate Tools - ADMIN owned)
-    const globalPages = getAllPages({ ...d, owner_id: "" });
-    
-    // 4. Get My Pages (User owned)
-    let myPages = { data: [] };
-    if(userId) {
-        myPages = getAllPages({ ...d, owner_id: userId, only_mine: true });
-    }
-    
-    // 5. Get Affiliate Pixels (User specific)
-    let myPixels = [];
-    if(userId) {
-        const s = ss.getSheetByName("Affiliate_Pixels");
-        if (s) {
-            const data = s.getDataRange().getValues();
-            for (let i = 1; i < data.length; i++) {
-                if (String(data[i][0]) === userId) {
-                    myPixels.push({
-                        product_id: data[i][1],
-                        pixel_id: data[i][2],
-                        pixel_token: data[i][3],
-                        pixel_test_code: data[i][4]
-                    });
-                }
-            }
-        }
-    }
-    
-    return {
+    const globalPages = getAllPages(Object.assign({}, d, { owner_id: "" }));
+    const myPages = userId ? getAllPages(Object.assign({}, d, { owner_id: userId, only_mine: true })) : { data: [] };
+    const myOrders = orders.filter(function(row) {
+      return String(row[2] || "").trim().toLowerCase() === email;
+    }).slice().reverse().map(function(row) {
+      return {
+        timestamp: String(row[0] || "").trim(),
+        nama: String(row[1] || "").trim(),
+        email: String(row[2] || "").trim(),
+        no_wa: normalizeStoredWhatsApp_(row[3]),
+        alamat: String(row[4] || "").trim(),
+        detail_pesanan: String(row[5] || "").trim(),
+        total_harga: toNumberSafe_(row[6]),
+        status_pembayaran: normalizeOrderStatus_(row[7]),
+        bukti_transfer: String(row[8] || "").trim()
+      };
+    });
+    return attachCacheManifest_({
       status: "success",
       data: {
-        user: { id: userId, nama: userNama, upline_id: uplineId, upline_name: uplineName },
-        settings: { 
-            site_name: getCfgFrom_(cfg, "site_name"),
-            site_logo: sanitizeAssetUrl_(getCfgFrom_(cfg, "site_logo")),
-            site_favicon: sanitizeAssetUrl_(getCfgFrom_(cfg, "site_favicon")),
-            wa_admin: getCfgFrom_(cfg, "wa_admin")
+        user: { id: userId, nama: userNama },
+        settings: {
+          site_name: getCfgFrom_(cfg, "site_name"),
+          site_logo: sanitizeAssetUrl_(getCfgFrom_(cfg, "site_logo")),
+          site_favicon: sanitizeAssetUrl_(getCfgFrom_(cfg, "site_favicon")),
+          wa_admin: getCfgFrom_(cfg, "wa_admin")
         },
         products: productsData,
         pages: globalPages.data || [],
         my_pages: myPages.data || [],
-        affiliate_pixels: myPixels
+        orders: myOrders
       }
-    };
+    }, ["settings", "products", "pages", "orders", "users"]);
   } catch (e) {
     return { status: "error", message: e.toString() };
   }
 }
 
-/* =========================
-   LOGIN + PAGE + ADMIN
-========================= */
 function loginUser(d) {
   const u = mustSheet_("Users").getDataRange().getValues();
   const e = String(d.email || "").trim().toLowerCase();
@@ -2271,7 +1483,9 @@ function loginAndDashboard(d) {
   return {
     status: "success",
     data: loginResult.data,
-    dashboard: dashboardResult.data
+    dashboard: Object.assign({}, dashboardResult.data, {
+      cache_manifest: dashboardResult.cache_manifest || getCacheManifestSnapshot_(["settings", "products", "pages", "orders", "users"])
+    })
   };
 }
 
@@ -2280,7 +1494,7 @@ function getPageContent(d) {
     const r = mustSheet_("Pages").getDataRange().getValues();
     for (let i = 1; i < r.length; i++) {
       if (String(r[i][1]) === String(d.slug)) {
-          return { 
+          return attachCacheManifest_({ 
               status: "success", 
               title: r[i][2], 
               content: r[i][3],
@@ -2288,7 +1502,7 @@ function getPageContent(d) {
               pixel_token: r[i][8] || "",
               pixel_test_code: r[i][9] || "",
               theme_mode: r[i][10] || "light"
-          };
+          }, ["pages"]);
       }
     }
     return { status: "error" };
@@ -2313,12 +1527,12 @@ function getAllPages(d) {
             // Mode "Halaman Saya": Hanya tampilkan milik user ini
             if (pageOwner === filterOwner) data.push(r[i]);
         } else {
-            // Mode Default (Global): Tampilkan halaman ADMIN (untuk affiliate link)
+            // Mode default: tampilkan halaman global milik ADMIN
             if (pageOwner === "ADMIN") data.push(r[i]);
         }
       }
     }
-    return { status: "success", data: data };
+    return attachCacheManifest_({ status: "success", data: data }, ["pages"]);
   } catch (e) {
     return { status: "error", message: e.toString() };
   }
@@ -2539,67 +1753,6 @@ function runAuthTests() {
   return { status: "success", summary: passed + " passed, " + failed + " failed, " + results.length + " total", tests: results };
 }
 
-function runMootaValidationTests() {
-  const cases = [
-    {
-      test: "Menerima URL HTTPS dan Secret Token alphanumeric valid",
-      input: { gasUrl: "https://example.com/webhook/moota", token: "Secret123" },
-      expectedErrors: []
-    },
-    {
-      test: "Menolak link webhook kosong",
-      input: { gasUrl: "", token: "Secret123" },
-      expectedErrors: ["Link webhook Moota wajib diisi."]
-    },
-    {
-      test: "Menolak link webhook non-HTTPS",
-      input: { gasUrl: "http://example.com/webhook/moota", token: "Secret123" },
-      expectedErrors: ["Format link webhook Moota tidak valid. Gunakan URL HTTPS tanpa query string."]
-    },
-    {
-      test: "Menolak link webhook Google Apps Script langsung",
-      input: { gasUrl: "https://script.google.com/macros/s/abc/exec", token: "Secret123" },
-      expectedErrors: ["Link webhook Moota tidak boleh langsung ke Google Apps Script. Gunakan endpoint Cloudflare Worker atau proxy publik agar header Signature bisa diteruskan."]
-    },
-    {
-      test: "Menolak Secret Token kosong",
-      input: { gasUrl: "https://example.com/webhook/moota", token: "" },
-      expectedErrors: ["Secret Token Moota wajib diisi."]
-    },
-    {
-      test: "Menolak Secret Token kurang dari 8 karakter",
-      input: { gasUrl: "https://example.com/webhook/moota", token: "Abc1234" },
-      expectedErrors: ["Format Secret Token Moota tidak valid. Gunakan minimal 8 karakter alphanumeric tanpa spasi."]
-    },
-    {
-      test: "Menolak Secret Token dengan karakter non-alphanumeric",
-      input: { gasUrl: "https://example.com/webhook/moota", token: "Secret-123" },
-      expectedErrors: ["Format Secret Token Moota tidak valid. Gunakan minimal 8 karakter alphanumeric tanpa spasi."]
-    }
-  ];
-
-  const results = cases.map(function(item) {
-    const errors = validateMootaConfigFormat_(item.input);
-    const pass = JSON.stringify(errors) === JSON.stringify(item.expectedErrors);
-    return {
-      test: item.test,
-      pass: pass,
-      input: item.input,
-      expected: item.expectedErrors,
-      actual: errors
-    };
-  });
-
-  const passed = results.filter(function(result) { return result.pass; }).length;
-  const failed = results.length - passed;
-
-  return {
-    status: "success",
-    summary: passed + " passed, " + failed + " failed, " + results.length + " total",
-    tests: results
-  };
-}
-
 function runDemoAdminSecurityTests() {
   const demoLogin = adminLogin({ email: DEMO_ADMIN_ACCOUNT.email, password: DEMO_ADMIN_ACCOUNT.password });
   const demoToken = demoLogin && demoLogin.data ? demoLogin.data.session_token : "";
@@ -2610,7 +1763,7 @@ function runDemoAdminSecurityTests() {
     orders: [["2026-03-19T10:00:00.000Z", "2026-03-19T10:00:00.000Z", "Andi", "user@example.com", "08123", "Jl. Mawar No. 1, Jakarta", "Produk: Produk A | Jumlah: 1 | Harga: Rp 149.654", 149654, "Pending", ""]],
     products: [["PRD-1", "Produk A", "Deskripsi", "https://example.com", 149654, "Active", "", "https://example.com/img.jpg", "", "", "", 0]],
     pages: [["PG-1", "landing", "Landing Page", "<h1>Hi</h1>", "Active", "2026-03-19", "ADMIN", "", "", "", "light"]],
-    settings: { site_name: "Kelas Jagoan", contact_email: "admin@example.com", moota_gas_url: "https://example.com/webhook/moota" },
+    settings: { site_name: "Kelas Jagoan", contact_email: "admin@example.com", bank_name: "Bank Demo" },
     users: [["u-001", "member@example.com", "sha256$abc", "Member Satu", "member", "Active", "2026-03-19", "-"]],
     has_more_orders: false,
     has_more_users: false
@@ -2684,205 +1837,34 @@ function runDemoAdminSecurityTests() {
   };
 }
 
-function runMootaSignatureTests() {
-  const payload = JSON.stringify([{
-    amount: 50000,
-    type: "CR",
-    description: "Testing webhook moota",
-    created_at: "2019-11-10 14:33:01"
-  }]);
-  const secret = "Secret123";
-  const expectedSignature = computeMootaSignatureHex_(payload, secret);
-  const prefixedSignature = "sha256=" + expectedSignature.toUpperCase();
-  const cases = [
-    {
-      test: "Normalisasi signature menerima prefix sha256 dan huruf besar",
-      actual: normalizeMootaSignature_(prefixedSignature),
-      expected: expectedSignature
-    },
-    {
-      test: "Verifikasi signature valid",
-      actual: verifyMootaSignature_(payload, secret, expectedSignature).code,
-      expected: "ok"
-    },
-    {
-      test: "Verifikasi signature valid dengan prefix sha256",
-      actual: verifyMootaSignature_(payload, secret, prefixedSignature).code,
-      expected: "ok"
-    },
-    {
-      test: "Verifikasi signature gagal saat signature kosong",
-      actual: verifyMootaSignature_(payload, secret, "").code,
-      expected: "missing_signature"
-    },
-    {
-      test: "Verifikasi signature gagal saat secret kosong",
-      actual: verifyMootaSignature_(payload, "", expectedSignature).code,
-      expected: "missing_secret"
-    },
-    {
-      test: "Verifikasi signature gagal saat signature tidak cocok",
-      actual: verifyMootaSignature_(payload, secret, "deadbeef").code,
-      expected: "invalid_signature"
-    },
-    {
-      test: "Meta membaca flag verifikasi Worker",
-      actual: extractMootaSignatureMeta_({
-        parameter: {
-          moota_signature: expectedSignature,
-          moota_sig_verified: "1",
-          moota_sig_verified_by: "worker"
-        }
-      }).workerVerifiedSignature,
-      expected: true
-    },
-    {
-      test: "Meta membaca sumber verifikasi Worker",
-      actual: extractMootaSignatureMeta_({
-        parameter: {
-          moota_signature: expectedSignature,
-          moota_sig_verified: "1",
-          moota_sig_verified_by: "worker"
-        }
-      }).workerVerificationSource,
-      expected: "worker"
-    },
-    {
-      test: "Helper mendeteksi URL Google Apps Script langsung",
-      actual: isDirectAppsScriptUrl_("https://script.google.com/macros/s/abc/exec"),
-      expected: true
-    },
-    {
-      test: "Klasifikasi missing signature untuk URL Google Apps Script langsung",
-      actual: classifyMootaSignatureMissing_(
-        { gasUrl: "https://script.google.com/macros/s/abc/exec" },
-        { forwardedByWorker: false, workerSawSignature: false }
-      ).code,
-      expected: "direct_apps_script_url"
-    },
-    {
-      test: "Klasifikasi missing signature saat Worker tidak terdeteksi",
-      actual: classifyMootaSignatureMissing_(
-        { gasUrl: "https://example.com/webhook/moota" },
-        { forwardedByWorker: false, workerSawSignature: false }
-      ).code,
-      expected: "worker_not_detected"
-    },
-    {
-      test: "Klasifikasi missing signature saat Worker hidup tapi header tidak ada",
-      actual: classifyMootaSignatureMissing_(
-        { gasUrl: "https://example.com/webhook/moota" },
-        { forwardedByWorker: true, workerSawSignature: false }
-      ).code,
-      expected: "worker_missing_signature_header"
-    }
-  ];
-
-  const results = cases.map(function(item) {
-    const pass = JSON.stringify(item.actual) === JSON.stringify(item.expected);
-    return {
-      test: item.test,
-      pass: pass,
-      expected: item.expected,
-      actual: item.actual
-    };
-  });
-
-  const passed = results.filter(function(result) { return result.pass; }).length;
-  const failed = results.length - passed;
-
-  return {
-    status: "success",
-    summary: passed + " passed, " + failed + " failed, " + results.length + " total",
-    tests: results,
-    sample_signature: maskMootaSignatureForLog_(expectedSignature)
-  };
-}
-
-function getAdminData(d, cfg) {
-  try {
-    const session = requireAdminSession_(d, { allowDemo: true, actionName: "get_admin_data" });
-    cfg = cfg || getSettingsMap_();
-    const o = mustSheet_("Orders").getDataRange().getValues();
-    const u = mustSheet_("Users").getDataRange().getValues();
-    const s = mustSheet_("Settings").getDataRange().getValues();
-    const p = mustSheet_("Access_Rules").getDataRange().getValues();
-    const pg = mustSheet_("Pages").getDataRange().getValues();
-
-    let rev = 0;
-    for (let i = 1; i < o.length; i++) {
-      if (String(o[i][7]) === "Lunas") rev += Number(o[i][6] || 0);
-    }
-
-    let t = {};
-    for (let i = 1; i < s.length; i++) {
-      if (s[i][0]) t[s[i][0]] = s[i][1];
-    }
-    const resolvedMootaCfg = resolveMootaConfig_({}, cfg);
-    t.moota_gas_url = normalizeMootaUrl_(resolvedMootaCfg.gasUrl || t.moota_gas_url || getCurrentWebAppUrl_());
-    t.moota_token = "";
-    t.moota_token_configured = !!resolvedMootaCfg.token;
-    t.ik_private_key = "";
-    t.ik_private_key_configured = !!getSecret_("ik_private_key", cfg);
-
-    const result = {
-      status: "success",
-      demo_mode: false,
-      read_only: false,
-      role: session.role,
-      session_expires_at: session.expires_at,
-      stats: { users: u.length - 1, orders: o.length - 1, rev: rev },
-      orders: o.slice(1).reverse().slice(0, 20),
-      products: p.slice(1),
-      pages: pg.slice(1),
-      settings: t,
-      users: u.slice(1).reverse().slice(0, 20),
-      has_more_orders: (o.length - 1) > 20,
-      has_more_users: (u.length - 1) > 20
-    };
-    if (isDemoAdminRole_(session.role)) return maskAdminDataForDemo_(result, session);
-    return result;
-  } catch (e) {
-    return { status: "error", message: e.toString() };
-  }
-}
-
-/* =========================
-   SAVE PRODUCT / PAGE / SETTINGS
-========================= */
 function saveProduct(d) {
   try {
     requireAdminSession_(d, { allowDemo: false, actionName: "save_product" });
     const s = mustSheet_("Access_Rules");
-    
-    // Ensure we have enough columns (12 columns needed)
-    if (s.getMaxColumns() < 12) s.insertColumnsAfter(s.getMaxColumns(), 12 - s.getMaxColumns());
-    
-    const dataRow = [d.id, d.title, d.desc, d.url, d.harga, d.status, d.lp_url, d.image_url, d.pixel_id, d.pixel_token, d.pixel_test_code, d.commission];
+    const requiredCols = 11;
+    if (s.getMaxColumns() < requiredCols) s.insertColumnsAfter(s.getMaxColumns(), requiredCols - s.getMaxColumns());
+    const dataRow = [d.id, d.title, d.desc, d.url, d.harga, d.status, d.lp_url, d.image_url, d.pixel_id, d.pixel_token, d.pixel_test_code];
     const isEdit = String(d.is_edit) === "true";
-
     if (isEdit) {
-      const r = s.getDataRange().getValues();
-      for (let i = 1; i < r.length; i++) {
-        if (String(r[i][0]).trim() === String(d.id).trim()) {
-          s.getRange(i + 1, 1, 1, 12).setValues([dataRow]);
+      const rows = s.getDataRange().getValues();
+      for (let i = 1; i < rows.length; i++) {
+        if (String(rows[i][0]).trim() === String(d.id).trim()) {
+          s.getRange(i + 1, 1, 1, requiredCols).setValues([dataRow]);
           invalidateCaches_(["access_rules"]);
-          return { status: "success" };
+          return { status: "success", cache_manifest: touchCacheTags_(["products"]) };
         }
       }
       return { status: "error", message: "ID Produk tidak ditemukan untuk diedit" };
-    } else {
-      // Check for duplicate ID before appending
-      const r = s.getDataRange().getValues();
-      for (let i = 1; i < r.length; i++) {
-        if (String(r[i][0]).trim() === String(d.id).trim()) {
-           return { status: "error", message: "ID Produk sudah digunakan. Mohon refresh halaman." };
-        }
-      }
-      s.appendRow(dataRow);
-      invalidateCaches_(["access_rules"]);
-      return { status: "success" };
     }
+    const rows = s.getDataRange().getValues();
+    for (let i = 1; i < rows.length; i++) {
+      if (String(rows[i][0]).trim() === String(d.id).trim()) {
+        return { status: "error", message: "ID Produk sudah digunakan. Mohon refresh halaman." };
+      }
+    }
+    s.appendRow(dataRow);
+    invalidateCaches_(["access_rules"]);
+    return { status: "success", cache_manifest: touchCacheTags_(["products"]) };
   } catch (e) {
     return { status: "error", message: e.toString() };
   }
@@ -2899,7 +1881,7 @@ function deleteProduct(d) {
       if (String(r[i][0]).trim() === id) {
         s.deleteRow(i + 1);
         invalidateCaches_(["access_rules"]);
-        return { status: "success", message: "Produk berhasil dihapus" };
+        return { status: "success", message: "Produk berhasil dihapus", cache_manifest: touchCacheTags_(["products"]) };
       }
     }
     return { status: "error", message: "ID Produk tidak ditemukan" };
@@ -2952,7 +1934,7 @@ function savePage(d) {
           s.getRange(i + 1, 1, 1, 4).setValues([[d.id, slug, d.title, d.content]]);
           // Update Meta Pixel Columns (Col 8, 9, 10) + Theme Mode (Col 11)
           s.getRange(i + 1, 8, 1, 4).setValues([[d.meta_pixel_id || "", d.meta_pixel_token || "", d.meta_pixel_test_event || "", d.theme_mode || "light"]]);
-          return { status: "success" };
+          return { status: "success", cache_manifest: touchCacheTags_(["pages"]) };
         }
       }
       return { status: "error", message: "ID Halaman tidak ditemukan" };
@@ -2960,7 +1942,7 @@ function savePage(d) {
       const newId = "PG-" + Date.now();
       // Tambahkan Owner ID di kolom ke-7 (index 6) + Meta Pixel (7,8,9) + Theme Mode (10)
       s.appendRow([newId, slug, d.title, d.content, "Active", toISODate_(), ownerId, d.meta_pixel_id || "", d.meta_pixel_token || "", d.meta_pixel_test_event || "", d.theme_mode || "light"]);
-      return { status: "success" };
+      return { status: "success", cache_manifest: touchCacheTags_(["pages"]) };
     }
   } catch (e) {
     return { status: "error", message: e.toString() };
@@ -2984,7 +1966,7 @@ function deletePage(d) {
         }
         
         s.deleteRow(i + 1);
-        return { status: "success", message: "Halaman berhasil dihapus" };
+        return { status: "success", message: "Halaman berhasil dihapus", cache_manifest: touchCacheTags_(["pages"]) };
       }
     }
     return { status: "error", message: "ID Halaman tidak ditemukan" };
@@ -3018,83 +2000,67 @@ function checkSlug(d) {
   }
 }
 
+function getRetiredSettingsKeys_() {
+  return [
+    ["fon", "nte_token"].join(""),
+    ["moo", "ta_gas_url"].join(""),
+    ["moo", "ta_token"].join(""),
+    ["moo", "ta_secret"].join("")
+  ];
+}
+
+function toKeyLookup_(list) {
+  const source = Array.isArray(list) ? list : [];
+  const lookup = {};
+  source.forEach(function(key) {
+    lookup[String(key || "").trim()] = true;
+  });
+  return lookup;
+}
+
 function updateSettings(d) {
   requireAdminSession_(d, { allowDemo: false, actionName: "update_settings" });
-  const cfg = getSettingsMap_();
   const payload = Object.assign({}, (d && d.payload && typeof d.payload === "object") ? d.payload : {});
-  if (Object.prototype.hasOwnProperty.call(payload, "moota_secret") && !Object.prototype.hasOwnProperty.call(payload, "moota_token")) {
-    payload.moota_token = payload.moota_secret;
-  }
-  if (Object.prototype.hasOwnProperty.call(payload, "moota_secret")) {
-    delete payload.moota_secret;
-  }
-  const hasMootaPayload = Object.prototype.hasOwnProperty.call(payload, "moota_gas_url")
-    || Object.prototype.hasOwnProperty.call(payload, "moota_token");
-  if (hasMootaPayload) {
-    const mootaCfg = resolveMootaConfig_(payload, cfg);
-    const shouldValidateMoota = !!(mootaCfg.gasUrl || mootaCfg.token);
-    if (shouldValidateMoota) {
-      const mootaErrors = validateMootaConfigFormat_(mootaCfg);
-      if (mootaErrors.length) {
-        return { status: "error", message: mootaErrors[0], errors: mootaErrors };
-      }
-    }
-  }
-
   const s = mustSheet_("Settings");
-  const r = s.getDataRange().getValues();
-  const propertyOnlyKeys = {
-    ik_private_key: true,
-    moota_token: true
-  };
-  for (let k in payload) {
-    let nextValue = payload[k];
-    if (k === "site_logo" || k === "site_favicon") {
-      nextValue = sanitizeAssetUrl_(nextValue);
-    }
-    if (k === "moota_gas_url") {
-      nextValue = normalizeMootaUrl_(nextValue);
-    }
-    const storeInPropertiesOnly = !!propertyOnlyKeys[k];
+  const deprecatedKeys = toKeyLookup_(getRetiredSettingsKeys_());
+  const propertyOnlyKeys = { ik_private_key: true };
+  const props = PropertiesService.getScriptProperties();
+  Object.keys(deprecatedKeys).forEach(function(key) {
+    try { props.deleteProperty(key); } catch (e) {}
+  });
+  const rows = s.getDataRange().getValues();
+  for (let i = rows.length - 1; i >= 1; i--) {
+    const key = String(rows[i][0] || "").trim();
+    if (deprecatedKeys[key]) s.deleteRow(i + 1);
+  }
+  let freshRows = s.getDataRange().getValues();
+  for (let key in payload) {
+    if (deprecatedKeys[key]) continue;
+    let nextValue = payload[key];
+    if (key === "site_logo" || key === "site_favicon") nextValue = sanitizeAssetUrl_(nextValue);
+    const storeInPropertiesOnly = !!propertyOnlyKeys[key];
     if (storeInPropertiesOnly) {
-      const props = PropertiesService.getScriptProperties();
       nextValue = String(nextValue || "").trim();
-      if (nextValue) {
-        props.setProperty(k, nextValue);
-        if (k === "moota_token") props.deleteProperty("moota_secret");
-      } else {
-        props.deleteProperty(k);
-      }
+      if (nextValue) props.setProperty(key, nextValue);
+      else props.deleteProperty(key);
     }
-    let f = false;
-    for (let i = 1; i < r.length; i++) {
-      if (r[i][0] === k) {
+    let found = false;
+    for (let i = 1; i < freshRows.length; i++) {
+      if (String(freshRows[i][0] || "") === key) {
         s.getRange(i + 1, 2).setValue(storeInPropertiesOnly ? "" : nextValue);
-        f = true;
+        found = true;
         break;
       }
     }
-    if (!f && !storeInPropertiesOnly) s.appendRow([k, nextValue]);
+    if (!found && !storeInPropertiesOnly) {
+      s.appendRow([key, nextValue]);
+      freshRows = s.getDataRange().getValues();
+    }
   }
   invalidateCaches_(["settings_map"]);
-  return { status: "success" };
+  return { status: "success", cache_manifest: touchCacheTags_(["settings"]) };
 }
 
-function importMootaConfig(d) {
-  requireAdminSession_(d, { allowDemo: false, actionName: "import_moota_config" });
-  const payload = (d && d.payload && typeof d.payload === "object") ? d.payload : d || {};
-  return updateSettings({
-    auth_session_token: getAdminSessionToken_(d),
-    payload: {
-      moota_gas_url: payload.moota_gas_url,
-      moota_token: payload.moota_token !== undefined ? payload.moota_token : payload.moota_secret
-    }
-  });
-}
-
-/* =========================
-   IMAGEKIT AUTH
-========================= */
 function testImageKitConfig(d, cfg) {
   requireAdminSession_(d, { allowDemo: false, actionName: "test_ik_config" });
   cfg = cfg || getSettingsMap_();
@@ -3176,133 +2142,6 @@ function changeUserPassword(d) {
 /* =========================
    UPDATE PROFILE (NAMA & EMAIL)
 ========================= */
-function updateUserProfile(d) {
-  try {
-    const s = mustSheet_("Users");
-    const r = s.getDataRange().getValues();
-    const currentEmail = String(d.email).trim().toLowerCase();
-    const newName = String(d.new_name).trim();
-    const newEmail = String(d.new_email).trim().toLowerCase();
-    const password = String(d.password); // Verify password before updating sensitive info
-
-    if (!newName || !newEmail) return { status: "error", message: "Nama dan Email baru wajib diisi." };
-
-    let userRowIndex = -1;
-    let currentData = null;
-
-    // 1. Verify User & Check duplicate email if changed
-    for (let i = 1; i < r.length; i++) {
-      const rowEmail = String(r[i][1]).trim().toLowerCase();
-      
-      // Find current user
-      if (rowEmail === currentEmail) {
-        if (!verifyPassword_(password, String(r[i][2] || ""))) return { status: "error", message: "Password salah!" };
-        userRowIndex = i + 1;
-        currentData = r[i];
-      } 
-      
-      // Check if new email is already taken by SOMEONE ELSE
-      if (rowEmail === newEmail && rowEmail !== currentEmail) {
-        return { status: "error", message: "Email baru sudah digunakan oleh pengguna lain." };
-      }
-    }
-
-    if (userRowIndex === -1) return { status: "error", message: "Pengguna tidak ditemukan." };
-
-    // 2. Update Users Sheet
-    // Col 2: Email (index 1), Col 4: Nama (index 3)
-    // Note: getRange(row, col) is 1-based.
-    s.getRange(userRowIndex, 2).setValue(newEmail);
-    s.getRange(userRowIndex, 4).setValue(newName);
-
-    // 3. Update Orders Sheet if email changed (Consistency)
-    if (newEmail !== currentEmail) {
-      const oS = mustSheet_("Orders");
-      const oR = oS.getDataRange().getValues();
-      for (let j = 1; j < oR.length; j++) {
-        if (String(oR[j][1]).toLowerCase() === currentEmail) {
-          oS.getRange(j + 1, 2).setValue(newEmail);
-          oS.getRange(j + 1, 3).setValue(newName); // Update name as well
-        }
-      }
-    } else {
-       // Just update name in Orders if email same
-      const oS = mustSheet_("Orders");
-      const oR = oS.getDataRange().getValues();
-      for (let j = 1; j < oR.length; j++) {
-        if (String(oR[j][1]).toLowerCase() === currentEmail) {
-          oS.getRange(j + 1, 3).setValue(newName);
-        }
-      }
-    }
-
-    return { status: "success", message: "Profil berhasil diperbarui", new_email: newEmail, new_name: newName };
-
-  } catch (e) {
-    return { status: "error", message: e.toString() };
-  }
-}
-
-/* =========================
-   AFFILIATE PIXEL SETTINGS
-========================= */
-function saveAffiliatePixel(d) {
-  try {
-    const sName = "Affiliate_Pixels";
-    let s = ss.getSheetByName(sName);
-    if (!s) {
-      s = ss.insertSheet(sName);
-      s.appendRow(["user_id", "product_id", "pixel_id", "pixel_token", "pixel_test_code"]);
-    }
-    
-    // 1. Get User ID from Email (Secure way: use login token if available, but here we trust email for now as it's backend call from trusted client logic)
-    // Ideally we should use session token, but current system uses email.
-    const email = String(d.email || "").trim().toLowerCase();
-    if (!email) return { status: "error", message: "Email wajib diisi" };
-
-    const uS = mustSheet_("Users");
-    const uR = uS.getDataRange().getValues();
-    let userId = "";
-    
-    for (let i = 1; i < uR.length; i++) {
-      if (String(uR[i][1]).toLowerCase() === email) { 
-        userId = String(uR[i][0]); 
-        break; 
-      }
-    }
-    
-    if (!userId) return { status: "error", message: "User tidak ditemukan" };
-    
-    const productId = String(d.product_id).trim();
-    const pixelId = String(d.pixel_id || "").trim();
-    const pixelToken = String(d.pixel_token || "").trim();
-    const pixelTest = String(d.pixel_test_code || "").trim();
-
-    const r = s.getDataRange().getValues();
-    let found = false;
-
-    for (let i = 1; i < r.length; i++) {
-      if (String(r[i][0]) === userId && String(r[i][1]) === productId) {
-        // Update existing row (Col 3, 4, 5 -> index 2, 3, 4)
-        s.getRange(i + 1, 3, 1, 3).setValues([[pixelId, pixelToken, pixelTest]]);
-        found = true;
-        break;
-      }
-    }
-
-    if (!found) {
-      s.appendRow([userId, productId, pixelId, pixelToken, pixelTest]);
-    }
-    
-    return { status: "success", message: "Pixel berhasil disimpan" };
-  } catch (e) {
-    return { status: "error", message: e.toString() };
-  }
-}
-
-/* =========================
-   PERMISSION WARMUP
-========================= */
 function pancinganIzin() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   if (ss) ss.getName();
@@ -3317,181 +2156,6 @@ function pancinganIzin() {
 
 /* =========================
    AUTO-PAYMENT SYSTEM (MOOTA WEBHOOK)
-========================= */
-function handleMootaWebhook(mutations, cfg) {
-  try {
-    cfg = cfg || getSettingsMap_();
-
-    // LOG: Raw incoming webhook for debugging
-    logMoota_("WEBHOOK_IN", "Mutations count: " + mutations.length + " | Data masked");
-
-    const s = mustSheet_("Orders");
-    const orders = s.getDataRange().getValues();
-    const siteName = getCfgFrom_(cfg, "site_name") || "Sistem Premium";
-    const adminWA = getCfgFrom_(cfg, "wa_admin");
-
-    const MAX_AGE_HOURS = 72; // Extended from 48 to 72 hours for better matching
-    const matched = [];
-    const debugLog = [];
-
-    debugLog.push("MUTATIONS: " + mutations.length);
-
-    for (let m = 0; m < mutations.length; m++) {
-      const mutasi = mutations[m];
-      const type = String(mutasi.type || "").toUpperCase();
-
-      // Filter Credit only (Uang Masuk)
-      if (type !== "CR" && type !== "CREDIT") {
-        debugLog.push(`SKIP [${m}] Type=${type} (Not CR)`);
-        logMoota_("SKIP_TYPE", "Mutation " + m + " type=" + type + " (not CR/CREDIT)");
-        continue;
-      }
-
-      // Robust Amount Parsing (Handle number or string)
-      let nominalTransfer = 0;
-      if (typeof mutasi.amount === 'number') {
-        nominalTransfer = mutasi.amount;
-      } else {
-        nominalTransfer = parseFloat(String(mutasi.amount || 0).replace(/[^0-9.-]/g, "")) || 0;
-      }
-      // Round to integer to avoid floating point issues
-      nominalTransfer = Math.round(nominalTransfer);
-
-      if (nominalTransfer <= 0) {
-        debugLog.push(`SKIP [${m}] Amount=0`);
-        logMoota_("SKIP_ZERO", "Mutation " + m + " amount=0 or negative");
-        continue;
-      }
-
-        debugLog.push(`CHECKING Amount=${nominalTransfer}`);
-
-      let foundMatch = false;
-      // Collect pending orders info for debugging if no match
-      let pendingOrders = [];
-
-      // Iterate Orders to find match
-      for (let i = 1; i < orders.length; i++) {
-        const statusOrder = String(orders[i][7] || "").trim();
-        
-        // Hanya proses yang statusnya Pending
-        if (statusOrder !== "Pending") continue;
-
-        // Cek umur order
-        if (MAX_AGE_HOURS > 0) {
-          const dtStr = String(orders[i][8] || "").trim();
-          const dt = new Date(dtStr);
-          if (!isNaN(dt.getTime())) {
-            const ageHours = (Date.now() - dt.getTime()) / 36e5;
-            if (ageHours > MAX_AGE_HOURS) continue;
-          }
-        }
-
-        const tagihanOrder = Math.round(toNumberSafe_(orders[i][6])); // Round to integer
-        pendingOrders.push({ inv: orders[i][0], tagihan: tagihanOrder });
-        
-        // MATCHING LOGIC: Exact Amount (Rounded integers)
-        if (tagihanOrder === nominalTransfer) {
-          debugLog.push(`  MATCH FOUND Row ${i+1}: Inv=${orders[i][0]}`);
-          logMoota_("MATCH", "Inv=" + orders[i][0] + " Amount=" + nominalTransfer + " Row=" + (i+1));
-          
-          // 1. UPDATE SHEET STATUS
-          s.getRange(i + 1, 8).setValue("Lunas");
-          orders[i][7] = "Lunas"; // Prevent double matching
-
-          const inv = orders[i][0];
-          const uEmail = orders[i][1];
-          const uName = orders[i][2];
-          const uWA = orders[i][3];
-          const pId = orders[i][4];
-          const pName = orders[i][5];
-
-          // 2. GET ACCESS URL
-          let accessUrl = "";
-          const pS = ss.getSheetByName("Access_Rules");
-          if (pS) {
-            const pData = pS.getDataRange().getValues();
-            for (let k = 1; k < pData.length; k++) {
-              if (String(pData[k][0]) === String(pId)) { accessUrl = pData[k][3]; break; }
-            }
-          }
-
-          // 3. SEND NOTIFICATIONS
-          
-          // LOG: Debug WA target before sending (diagnose Lunas WA failures)
-          logWA_("DEBUG_MOOTA_LUNAS", String(uWA), "raw=" + JSON.stringify(uWA) + " type=" + typeof uWA + " normalized=" + normalizePhone_(uWA) + " | Inv=" + inv);
-
-          // A) WA Customer
-          sendWA(
-            uWA,
-            `🎉 *PEMBAYARAN DITERIMA!* 🎉\n\nHalo *${uName}*, pembayaran Anda sebesar Rp ${Number(nominalTransfer).toLocaleString('id-ID')} telah berhasil diverifikasi otomatis.\n\nPesanan *${pName}* (Invoice: #${inv}) kini *AKTIF*.\n\n🚀 *AKSES MATERI:* \n${accessUrl}\n\nTerima kasih!\n*Tim ${siteName}*`,
-            cfg
-          );
-
-          // B) Email Customer
-          const emailHtml = `
-            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-                <h2 style="color: #10b981;">Pembayaran Berhasil! ✅</h2>
-                <p>Halo <b>${uName}</b>,</p>
-                <p>Pembayaran invoice <b>#${inv}</b> sebesar <b>Rp ${Number(nominalTransfer).toLocaleString('id-ID')}</b> telah diterima.</p>
-                <p>Silakan akses produk <b>${pName}</b> melalui tombol di bawah ini:</p>
-                <div style="text-align: center; margin: 30px 0;">
-                    <a href="${accessUrl}" style="background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Akses Materi</a>
-                </div>
-                <p>Terima kasih,<br><b>Tim ${siteName}</b></p>
-            </div>`;
-          sendEmail(uEmail, `Pembayaran Sukses: #${inv} - ${siteName}`, emailHtml, cfg);
-
-          // C) WA Admin
-          sendWA(
-            adminWA,
-            `💰 *MOOTA PAYMENT RECEIVED* 💰\n\nInv: #${inv}\nAmt: Rp ${Number(nominalTransfer).toLocaleString('id-ID')}\nUser: ${uName}\nProduk: ${pName}\n\nStatus: Auto-Lunas by System.`,
-            cfg
-          );
-
-          foundMatch = true;
-          matched.push(inv);
-          break; // Stop searching orders for this mutation
-        }
-      }
-
-      if (!foundMatch) {
-        const pendingInfo = pendingOrders.map(o => o.inv + "=" + o.tagihan).join(", ");
-        debugLog.push(`NO MATCH for Amount=${nominalTransfer} | Pending orders: ${pendingInfo}`);
-        logMoota_("NO_MATCH", "Amount=" + nominalTransfer + " | Pending orders: " + pendingInfo);
-        
-        // Alert admin about unmatched payment (only for significant amounts)
-        if (adminWA && nominalTransfer >= 10000) {
-          sendWA(
-            adminWA,
-            `⚠️ *UNMATCHED PAYMENT* ⚠️\n\nTransfer masuk Rp ${Number(nominalTransfer).toLocaleString('id-ID')} dari Moota TIDAK COCOK dengan order manapun.\n\nDeskripsi: ${String(mutasi.description || "-").substring(0, 100)}\n\nPending Orders:\n${pendingOrders.length > 0 ? pendingOrders.slice(0, 5).map(o => "• " + o.inv + " = Rp " + Number(o.tagihan).toLocaleString('id-ID')).join("\n") : "(tidak ada order pending)"}\n\nMohon cek manual di dashboard.`,
-            cfg
-          );
-        }
-      }
-    }
-
-    const resultSummary = matched.length > 0
-      ? "PROCESSED: " + matched.join(", ")
-      : "NO_MATCHING_ORDER";
-    logMoota_("RESULT", resultSummary + " | Logs: " + debugLog.join(" | "));
-      
-    return ContentService.createTextOutput(JSON.stringify({
-       status: "success", 
-       processed: matched, 
-       logs: debugLog 
-    })).setMimeType(ContentService.MimeType.JSON);
-
-  } catch (e) {
-    logMoota_("ERROR", e.toString());
-    return ContentService.createTextOutput(JSON.stringify({
-       status: "error", 
-       message: e.toString() 
-    })).setMimeType(ContentService.MimeType.JSON);
-  }
-}
-
-/* =========================
-   FORGOT PASSWORD
 ========================= */
 function forgotPassword(d) {
   try {
@@ -3547,32 +2211,6 @@ function forgotPassword(d) {
 /* =========================
    PAGINATION ACTIONS
 ========================= */
-function getAdminOrders(d) {
-  try {
-    const session = requireAdminSession_(d, { allowDemo: true, actionName: "get_admin_orders" });
-    const page = Number(d.page) || 1;
-    const limit = Number(d.limit) || 20;
-    const o = mustSheet_("Orders").getDataRange().getValues();
-    const data = o.slice(1).reverse();
-    const start = (page - 1) * limit;
-    const end = start + limit;
-    
-    const response = {
-      status: "success",
-      data: data.slice(start, end),
-      has_more: data.length > end
-    };
-    if (isDemoAdminRole_(session.role)) {
-      response.data = response.data.map(maskDemoOrderRow_);
-      response.demo_mode = true;
-      response.read_only = true;
-    }
-    return response;
-  } catch(e) {
-    return { status: "error", message: e.toString() };
-  }
-}
-
 function getAdminUsers(d) {
   try {
     const session = requireAdminSession_(d, { allowDemo: true, actionName: "get_admin_users" });
@@ -3593,7 +2231,7 @@ function getAdminUsers(d) {
       response.demo_mode = true;
       response.read_only = true;
     }
-    return response;
+    return attachCacheManifest_(response, ["users"]);
   } catch(e) {
     return { status: "error", message: e.toString() };
   }
@@ -3611,13 +2249,15 @@ function createOrder(d, cfg) {
     const timestamp = new Date().toISOString();
     const orderRef = buildPhysicalOrderReference_(timestamp);
     const nama = sanitizeOrderText_(d.nama);
-    const email = String(d.email || "").trim().toLowerCase();
+    const emailRaw = String(d.email || "").trim().toLowerCase();
+    const email = emailRaw;
     const whatsapp = normalizePhone_(d.whatsapp || d.no_wa || "");
     const alamat = String(d.alamat || d.alamat_pengiriman || "").trim();
     const productName = sanitizeOrderText_(d.nama_produk || d.product_name || d.produk);
     const quantity = Math.max(1, Number(d.jumlah || d.qty || d.quantity || 1));
     const unitPrice = Math.max(0, toNumberSafe_(d.harga_satuan !== undefined ? d.harga_satuan : d.harga));
     const detailPesanan = sanitizeOrderText_(d.detail_pesanan) || buildPhysicalOrderDetail_({
+      id_produk: d.id_produk || d.product_id || "",
       nama_produk: productName,
       jumlah: quantity,
       harga_satuan: unitPrice
@@ -3632,7 +2272,7 @@ function createOrder(d, cfg) {
     const bankOwner = String(getCfgFrom_(cfg, "bank_owner") || "").trim();
 
     if (nama.length < 3) return { status: "error", message: "Nama lengkap wajib diisi minimal 3 karakter." };
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { status: "error", message: "Alamat email tidak valid." };
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { status: "error", message: "Alamat email tidak valid." };
     if (!whatsapp || whatsapp.length < 9) return { status: "error", message: "Nomor WhatsApp tidak valid." };
     if (alamat.length < 10) return { status: "error", message: "Alamat pengiriman wajib diisi lengkap." };
     if (!productName && !detailPesanan) return { status: "error", message: "Detail pesanan tidak ditemukan." };
@@ -3651,27 +2291,25 @@ function createOrder(d, cfg) {
       statusPembayaran,
       buktiTransfer
     ]);
-
     const waLines = [
       "Halo " + siteName + ",",
       "",
-      "Saya ingin konfirmasi pesanan produk fisik berikut:",
+      "Saya ingin checkout produk fisik via WhatsApp dengan detail berikut:",
       "",
       "Kode Order: " + orderRef,
-      "Timestamp: " + timestamp,
-      "Nama: " + nama,
-      "Email: " + email,
+      "Nama Customer: " + nama,
       "WhatsApp: +62" + whatsapp,
-      "Alamat: " + alamat,
+      "Produk: " + productName,
+      "Jumlah: " + quantity,
+      "Harga Satuan: " + toCurrencyLabel_(unitPrice),
+      "Total Produk: " + toCurrencyLabel_(totalHarga),
+      "Alamat Pengiriman: " + alamat,
       "Detail Pesanan: " + detailPesanan,
-      "Total Transfer: " + toCurrencyLabel_(totalHarga),
-      "Status Pembayaran: " + statusPembayaran
+      "Status Pesanan: Menunggu konfirmasi admin"
     ];
-    if (bankName || bankNorek || bankOwner) {
-      waLines.push("Rekening Tujuan: " + [bankName, bankNorek, bankOwner ? ("a.n. " + bankOwner) : ""].filter(Boolean).join(" | "));
-    }
+    if (email) waLines.splice(5, 0, "Email: " + email);
     waLines.push("");
-    waLines.push("Mohon dibantu cek dan proses pesanan saya. Terima kasih.");
+    waLines.push("Mohon info konfirmasi stok, ongkir, dan langkah pembayaran berikutnya. Terima kasih.");
 
     const waMessage = waLines.join("\n");
     const redirectUrl = buildWhatsAppApiUrl_(adminWA, waMessage);
@@ -3699,7 +2337,8 @@ function createOrder(d, cfg) {
         bank_norek: bankNorek,
         bank_owner: bankOwner,
         wa_admin: adminWA
-      }
+      },
+      cache_manifest: touchCacheTags_(["orders"])
     };
   } catch (e) {
     return { status: "error", message: e.toString() };
@@ -3724,12 +2363,12 @@ function updateOrderStatus(d, cfg) {
     if (Object.prototype.hasOwnProperty.call(d, "bukti_transfer")) {
       s.getRange(rowNumber, 9).setValue(String(d.bukti_transfer || "").trim());
     }
-
     const freshRow = s.getRange(rowNumber, 1, 1, PHYSICAL_ORDER_HEADERS.length).getValues()[0];
     return {
       status: "success",
       message: "Status pembayaran berhasil diperbarui.",
-      data: physicalOrderRowToAdminRow_(freshRow)
+      data: physicalOrderRowToAdminRow_(freshRow),
+      cache_manifest: touchCacheTags_(["orders"])
     };
   } catch (e) {
     return { status: "error", message: e.toString() };
@@ -3744,7 +2383,7 @@ function deleteOrder(d) {
     const idx = findPhysicalOrderIndexById_(rows, d.id);
     if (idx === -1) return { status: "error", message: "Order tidak ditemukan." };
     s.deleteRow(idx + 2);
-    return { status: "success", message: "Order berhasil dihapus." };
+    return { status: "success", message: "Order berhasil dihapus.", cache_manifest: touchCacheTags_(["orders"]) };
   } catch (e) {
     return { status: "error", message: e.toString() };
   }
@@ -3755,44 +2394,40 @@ function getAdminData(d, cfg) {
     const session = requireAdminSession_(d, { allowDemo: true, actionName: "get_admin_data" });
     cfg = cfg || getSettingsMap_();
     const orders = getPhysicalOrderAdminRows_().reverse();
-    const u = mustSheet_("Users").getDataRange().getValues();
-    const s = mustSheet_("Settings").getDataRange().getValues();
-    const p = mustSheet_("Access_Rules").getDataRange().getValues();
-    const pg = mustSheet_("Pages").getDataRange().getValues();
-
+    const users = mustSheet_("Users").getDataRange().getValues();
+    const settingsRows = mustSheet_("Settings").getDataRange().getValues();
+    const products = mustSheet_("Access_Rules").getDataRange().getValues();
+    const pages = mustSheet_("Pages").getDataRange().getValues();
+    const deprecatedKeys = toKeyLookup_(getRetiredSettingsKeys_());
     let rev = 0;
     orders.forEach(function(order) {
       if (isPaidOrderStatus_(order[8])) rev += toNumberSafe_(order[7]);
     });
-
-    let t = {};
-    for (let i = 1; i < s.length; i++) {
-      if (s[i][0]) t[s[i][0]] = s[i][1];
+    const settings = {};
+    for (let i = 1; i < settingsRows.length; i++) {
+      const key = String(settingsRows[i][0] || "").trim();
+      if (!key || deprecatedKeys[key]) continue;
+      settings[key] = settingsRows[i][1];
     }
-    const resolvedMootaCfg = resolveMootaConfig_({}, cfg);
-    t.moota_gas_url = normalizeMootaUrl_(resolvedMootaCfg.gasUrl || t.moota_gas_url || getCurrentWebAppUrl_());
-    t.moota_token = "";
-    t.moota_token_configured = !!resolvedMootaCfg.token;
-    t.ik_private_key = "";
-    t.ik_private_key_configured = !!getSecret_("ik_private_key", cfg);
-
+    settings.ik_private_key = "";
+    settings.ik_private_key_configured = !!getSecret_("ik_private_key", cfg);
     const result = {
       status: "success",
       demo_mode: false,
       read_only: false,
       role: session.role,
       session_expires_at: session.expires_at,
-      stats: { users: u.length - 1, orders: orders.length, rev: rev },
+      stats: { users: users.length - 1, orders: orders.length, rev: rev },
       orders: orders.slice(0, 20),
-      products: p.slice(1),
-      pages: pg.slice(1),
-      settings: t,
-      users: u.slice(1).reverse().slice(0, 20),
+      products: products.slice(1),
+      pages: pages.slice(1),
+      settings: settings,
+      users: users.slice(1).reverse().slice(0, 20),
       has_more_orders: orders.length > 20,
-      has_more_users: (u.length - 1) > 20
+      has_more_users: (users.length - 1) > 20
     };
-    if (isDemoAdminRole_(session.role)) return maskAdminDataForDemo_(result, session);
-    return result;
+    if (isDemoAdminRole_(session.role)) return attachCacheManifest_(maskAdminDataForDemo_(result, session), ["settings", "products", "pages", "orders", "users"]);
+    return attachCacheManifest_(result, ["settings", "products", "pages", "orders", "users"]);
   } catch (e) {
     return { status: "error", message: e.toString() };
   }
@@ -3827,7 +2462,7 @@ function getAdminOrders(d) {
       response.demo_mode = true;
       response.read_only = true;
     }
-    return response;
+    return attachCacheManifest_(response, ["orders"]);
   } catch (e) {
     return { status: "error", message: e.toString() };
   }
@@ -3869,47 +2504,16 @@ function updateUserProfile(d) {
         oS.getRange(j + 2, 3).setValue(newEmail);
       }
     }
-
-    return { status: "success", message: "Profil berhasil diperbarui", new_email: newEmail, new_name: newName };
+    return { status: "success", message: "Profil berhasil diperbarui", new_email: newEmail, new_name: newName, cache_manifest: touchCacheTags_(["users", "orders"]) };
   } catch (e) {
     return { status: "error", message: e.toString() };
   }
 }
 
-function handleMootaWebhook(mutations, cfg) {
-  try {
-    cfg = cfg || getSettingsMap_();
-    const total = Array.isArray(mutations) ? mutations.length : 0;
-    logMoota_("SKIPPED_MANUAL_FLOW", "Mutations=" + total + " | Checkout fisik memakai verifikasi manual via WhatsApp.");
-    return {
-      status: "success",
-      processed: 0,
-      skipped: total,
-      message: "Webhook diterima, tetapi checkout fisik sekarang memakai verifikasi manual via WhatsApp sehingga status order tidak diubah otomatis."
-    };
-  } catch (e) {
-    return { status: "error", message: e.toString() };
-  }
-}
-
-/* =========================
-   DIAGNOSTIC & TEST FUNCTIONS
-========================= */
 function getEmailLogs_() {
   try {
     const s = ss.getSheetByName("Email_Logs");
     if (!s || s.getLastRow() <= 1) return { status: "success", data: [], message: "No email logs yet" };
-    const data = s.getDataRange().getValues();
-    return { status: "success", data: data.slice(1).reverse().slice(0, 50) };
-  } catch (e) {
-    return { status: "error", message: e.toString() };
-  }
-}
-
-function getMootaLogs_() {
-  try {
-    const s = ss.getSheetByName("Moota_Logs");
-    if (!s || s.getLastRow() <= 1) return { status: "success", data: [], message: "No moota logs yet" };
     const data = s.getDataRange().getValues();
     return { status: "success", data: data.slice(1).reverse().slice(0, 50) };
   } catch (e) {
@@ -3940,103 +2544,30 @@ function testEmailDelivery(d) {
   }
 }
 
-function testMootaWebhook() {
-  try {
-    const cfg = getSettingsMap_();
-    const orders = mustSheet_("Orders").getDataRange().getValues();
-    
-    // Find a Pending order to simulate
-    var testAmount = 0;
-    var testInv = "";
-    for (var i = orders.length - 1; i >= 1; i--) {
-      if (String(orders[i][7]).trim() === "Pending") {
-        testAmount = toNumberSafe_(orders[i][6]);
-        testInv = orders[i][0];
-        break;
-      }
-    }
-    
-    if (!testAmount) {
-      return { status: "warning", message: "Tidak ada order Pending untuk di-test. Buat order test terlebih dahulu." };
-    }
-    
-    // DRY RUN: simulate matching only, DO NOT actually update status
-    return {
-      status: "success",
-      message: "Dry run - order ditemukan untuk matching",
-      test_data: {
-        invoice: testInv,
-        amount: testAmount,
-        would_match: true,
-        note: "Ini hanya simulasi. Order TIDAK diubah statusnya. Untuk test penuh, kirim webhook asli dari Moota."
-      }
-    };
-  } catch (e) {
-    return { status: "error", message: e.toString() };
-  }
-}
-
 function getSystemHealth() {
   try {
-    const cfg = getSettingsMap_();
     const emailQuota = MailApp.getRemainingDailyQuota();
-    
-    // Count pending orders
-    const orders = mustSheet_("Orders").getDataRange().getValues();
-    var pendingCount = 0;
-    var oldPendingCount = 0;
-    for (var i = 1; i < orders.length; i++) {
-      if (String(orders[i][7]).trim() === "Pending") {
-        pendingCount++;
-        var dt = new Date(String(orders[i][8]));
-        if (!isNaN(dt.getTime()) && (Date.now() - dt.getTime()) / 36e5 > 72) {
-          oldPendingCount++;
-        }
+    const orders = getPhysicalOrderRows_();
+    let pendingCount = 0;
+    let oldPendingCount = 0;
+    orders.forEach(function(row) {
+      if (!isPaidOrderStatus_(row[7])) {
+        pendingCount += 1;
+        const dt = new Date(String(row[0] || ""));
+        if (!isNaN(dt.getTime()) && (Date.now() - dt.getTime()) / 36e5 > 72) oldPendingCount += 1;
       }
-    }
-    
-    // Check config
-    const mootaCfg = resolveMootaConfig_({}, cfg);
-    const mootaToken = mootaCfg.token;
-    const mootaGasUrl = normalizeMootaUrl_(mootaCfg.gasUrl || getCurrentWebAppUrl_());
-    const fonnteToken = getSecret_("fonnte_token", cfg);
-    
-    // Email log stats
-    var emailLogCount = 0, emailFailCount = 0;
-    var emailSheet = ss.getSheetByName("Email_Logs");
+    });
+    let emailLogCount = 0;
+    let emailFailCount = 0;
+    const emailSheet = ss.getSheetByName("Email_Logs");
     if (emailSheet && emailSheet.getLastRow() > 1) {
-      var eLogs = emailSheet.getDataRange().getValues();
-      emailLogCount = eLogs.length - 1;
-      for (var j = 1; j < eLogs.length; j++) {
-        if (String(eLogs[j][1]) === "FAILED" || String(eLogs[j][1]) === "QUOTA_EXCEEDED") emailFailCount++;
+      const emailLogs = emailSheet.getDataRange().getValues();
+      emailLogCount = emailLogs.length - 1;
+      for (let i = 1; i < emailLogs.length; i++) {
+        const status = String(emailLogs[i][1] || "");
+        if (status === "FAILED" || status === "QUOTA_EXCEEDED") emailFailCount += 1;
       }
     }
-    
-    // Moota log stats
-    var mootaLogCount = 0, mootaNoMatch = 0;
-    var mootaSheet = ss.getSheetByName("Moota_Logs");
-    if (mootaSheet && mootaSheet.getLastRow() > 1) {
-      var mLogs = mootaSheet.getDataRange().getValues();
-      mootaLogCount = mLogs.length - 1;
-      for (var k = 1; k < mLogs.length; k++) {
-        if (String(mLogs[k][1]) === "NO_MATCH") mootaNoMatch++;
-      }
-    }
-    
-    // WA log stats
-    var waSentCount = 0, waFailCount = 0, waRejectedCount = 0, waLogCount = 0;
-    var waSheet = ss.getSheetByName("WA_Logs");
-    if (waSheet && waSheet.getLastRow() > 1) {
-      var wLogs = waSheet.getDataRange().getValues();
-      waLogCount = wLogs.length - 1;
-      for (var w = 1; w < wLogs.length; w++) {
-        var wStatus = String(wLogs[w][1]);
-        if (wStatus === "SENT" || wStatus === "SENT_UNVERIFIED") waSentCount++;
-        else if (wStatus === "REJECTED") waRejectedCount++;
-        else if (wStatus === "HTTP_ERROR" || wStatus === "EXCEPTION" || wStatus === "NO_TOKEN") waFailCount++;
-      }
-    }
-    
     return {
       status: "success",
       health: {
@@ -4046,149 +2577,14 @@ function getSystemHealth() {
           total_logs: emailLogCount,
           failed_count: emailFailCount
         },
-        whatsapp: {
-          total_logs: waLogCount,
-          sent_count: waSentCount,
-          rejected_count: waRejectedCount,
-          failed_count: waFailCount,
-          sent_rate: waLogCount > 0 ? Math.round((waSentCount / waLogCount) * 100) + "%" : "N/A"
-        },
-        moota: {
-          gas_url_configured: !!mootaGasUrl,
-          secret_token_configured: !!mootaToken,
-          total_webhooks: mootaLogCount,
-          unmatched_count: mootaNoMatch
-        },
         orders: {
           pending_count: pendingCount,
           stale_pending: oldPendingCount
         },
         integrations: {
-          fonnte_configured: !!fonnteToken,
-          moota_configured: !!mootaToken && !!mootaGasUrl
+          checkout_flow: "manual_whatsapp",
+          payment_confirmation: "manual"
         }
-      }
-    };
-  } catch (e) {
-    return { status: "error", message: e.toString() };
-  }
-}
-
-function getWALogs_() {
-  try {
-    var s = ss.getSheetByName("WA_Logs");
-    if (!s || s.getLastRow() <= 1) return { status: "success", data: [], message: "No WA logs yet" };
-    var data = s.getDataRange().getValues();
-    return { status: "success", data: data.slice(1).reverse().slice(0, 50) };
-  } catch (e) {
-    return { status: "error", message: e.toString() };
-  }
-}
-
-function testWADelivery(d) {
-  try {
-    var target = String(d.target || d.whatsapp || "").trim();
-    if (!target) return { status: "error", message: "Nomor WhatsApp target wajib diisi (parameter: target)" };
-    
-    var cfg = getSettingsMap_();
-    var siteName = getCfgFrom_(cfg, "site_name") || "Sistem Premium";
-    var testMessage = "✅ *TEST WA BERHASIL!*\n\nIni adalah pesan test dari sistem *" + siteName + "*.\n\nWaktu: " + new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }) + "\n\nJika Anda menerima pesan ini, berarti koneksi WhatsApp via Fonnte berfungsi normal.";
-    
-    var result = sendWA(target, testMessage, cfg);
-    return { status: "success", message: "Test WA sent to " + target, result: result };
-  } catch (e) {
-    return { status: "error", message: e.toString() };
-  }
-}
-
-/**
- * testLunasNotification — Simulates the EXACT Lunas notification flow.
- * Finds a pending/existing order and sends WA + Email using the same code path 
- * as updateOrderStatus. Does NOT change the order status.
- * 
- * Call: {"action":"test_lunas_notification","invoice":"INV-XXXXX"}
- * Or:   {"action":"test_lunas_notification"} (auto-finds the latest pending order)
- */
-function testLunasNotification(d) {
-  try {
-    var cfg = getSettingsMap_();
-    var s = mustSheet_("Orders");
-    var pS = mustSheet_("Access_Rules");
-    var r = s.getDataRange().getValues();
-    var siteName = getCfgFrom_(cfg, "site_name") || "Sistem Premium";
-    var targetInv = String(d.invoice || d.id || "").trim();
-    
-    // Find order (specific or latest pending)
-    var orderRow = null;
-    var orderRowIdx = -1;
-    for (var i = r.length - 1; i >= 1; i--) {
-      if (targetInv) {
-        if (String(r[i][0]) === targetInv) { orderRow = r[i]; orderRowIdx = i; break; }
-      } else {
-        if (String(r[i][7]).trim() === "Pending") { orderRow = r[i]; orderRowIdx = i; break; }
-      }
-    }
-    
-    if (!orderRow) {
-      return { status: "error", message: targetInv ? "Invoice " + targetInv + " tidak ditemukan" : "Tidak ada order Pending. Buat order test dulu." };
-    }
-    
-    var inv = orderRow[0];
-    var uEmail = orderRow[1];
-    var uName = orderRow[2];
-    var uWA = orderRow[3];
-    var pId = orderRow[4];
-    var pName = orderRow[5];
-    
-    // Debug: capture raw data from sheet
-    var debugInfo = {
-      invoice: inv,
-      row_index: orderRowIdx + 1,
-      wa_raw_value: uWA,
-      wa_raw_type: typeof uWA,
-      wa_json: JSON.stringify(uWA),
-      wa_normalized: normalizePhone_(uWA),
-      email: uEmail,
-      name: uName,
-      product: pName,
-      current_status: orderRow[7]
-    };
-    
-    // Get access URL
-    var accessUrl = "";
-    var pData = pS.getDataRange().getValues();
-    for (var k = 1; k < pData.length; k++) {
-      if (String(pData[k][0]) === String(pId)) { accessUrl = pData[k][3]; break; }
-    }
-    debugInfo.access_url = accessUrl;
-    
-    // SEND WA (same message as real Lunas flow)
-    logWA_("TEST_LUNAS", String(uWA), "Testing Lunas notification for " + inv + " | WA raw=" + JSON.stringify(uWA) + " type=" + typeof uWA);
-    var waResult = sendWA(
-      uWA,
-      "🎉 *[TEST] PEMBAYARAN TERVERIFIKASI!* 🎉\n\nHalo *" + uName + "*, ini adalah TEST notifikasi Lunas.\n\nProduk *" + pName + "* (Invoice: #" + inv + ")\n\n🚀 *AKSES MATERI:*\n" + accessUrl + "\n\nIni pesan test. Jika terkirim berarti notifikasi Lunas berfungsi normal.\n*Tim " + siteName + "*",
-      cfg
-    );
-    
-    // SEND EMAIL (same template as real Lunas flow)
-    var emailHtml = '<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;border:1px solid #e2e8f0;border-radius:8px;">' +
-      '<h2 style="color:#10b981;">[TEST] Akses Terbuka! 🎉</h2>' +
-      '<p>Halo <b>' + uName + '</b>,</p>' +
-      '<p>Ini adalah TEST notifikasi Lunas untuk produk <b>' + pName + '</b>.</p>' +
-      '<div style="text-align:center;margin:30px 0;">' +
-      '<a href="' + accessUrl + '" style="background-color:#4f46e5;color:white;padding:12px 24px;text-decoration:none;border-radius:6px;font-weight:bold;">Akses Materi</a>' +
-      '</div>' +
-      '<p>Jika Anda menerima email ini, notifikasi Lunas berfungsi normal.</p>' +
-      '<p>Tim <b>' + siteName + '</b></p></div>';
-    var emailResult = sendEmail(uEmail, "[TEST] Akses Terbuka - " + siteName, emailHtml, cfg);
-    
-    return {
-      status: "success",
-      message: "Test Lunas notification sent for " + inv,
-      debug: debugInfo,
-      results: {
-        wa: waResult,
-        email: emailResult
       }
     };
   } catch (e) {

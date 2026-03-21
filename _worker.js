@@ -1,5 +1,5 @@
 // Cloudflare Pages Advanced Mode Worker
-// Handles POST /webhook/moota, passes everything else to static assets
+// Handles API requests and serves static assets
 
 // Parse ALLOWED_ORIGINS from env (comma-separated) — cached per-request
 let _parsedOrigins = null;
@@ -29,6 +29,11 @@ const _apiCircuit = {
   last_failure_at: 0
 };
 const _inFlightApi = new Map();
+const _cacheManifestState = {
+  value: null,
+  fetched_at: 0,
+  pending: null
+};
 
 const _blockedPaths = new Set([
   '/appscript.js',
@@ -271,17 +276,6 @@ export default {
       return handleHealth(env, ctx);
     }
 
-    // Route: POST /webhook/moota → Google Apps Script
-    if (url.pathname === '/webhook/moota') {
-      if (request.method !== 'POST') {
-        return new Response(
-          JSON.stringify({ status: 'error', message: 'Method Not Allowed. Use POST.' }),
-          { status: 405, headers: { 'Content-Type': 'application/json', 'Allow': 'POST' } }
-        );
-      }
-      return handleWebhook(request, env.MOOTA_GAS_URL, env.MOOTA_TOKEN);
-    }
-
     if (request.method === 'GET') {
       const cacheable = isCacheableAssetPath(url.pathname);
       if (cacheable) {
@@ -337,7 +331,7 @@ function corsHeadersFor(request, env) {
   const headers = {
     'Vary': 'Origin',
     'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, Signature',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Max-Age': '86400'
   };
   if (allowOrigin) headers['Access-Control-Allow-Origin'] = allowOrigin;
@@ -387,7 +381,8 @@ async function handleApi(request, env, ctx) {
     }
 
     const cacheTtls = getApiCacheTtls(env);
-    const cacheMeta = getCacheMetaFromParsed(parsedBody) || await tryGetCacheMeta(body);
+    const rawCacheMeta = getCacheMetaFromParsed(parsedBody) || await tryGetCacheMeta(body);
+    const cacheMeta = await augmentCacheMetaWithManifest(rawCacheMeta, parsedBody, env);
     if (cacheMeta && cacheMeta.action) mapIncLimited(_topApiActions, cacheMeta.action, 80);
     const ttl = cacheMeta ? cacheTtls[cacheMeta.action] : 0;
     if (ttl > 0 && request.method === 'POST') {
@@ -397,7 +392,7 @@ async function handleApi(request, env, ctx) {
         const cacheState = getCachedApiState(cached, ttl, env);
         if (cacheState.fresh) {
           inc('api_cache_hit');
-          return withMetricHeaders(cacheState.response, { 'x-api-cache': 'HIT' });
+          return withMetricHeaders(cacheState.response, withCacheDebugHeaders({ 'x-api-cache': 'HIT' }, cacheMeta));
         }
       }
       inc('api_cache_miss');
@@ -407,7 +402,7 @@ async function handleApi(request, env, ctx) {
         inc('circuit_open');
         if (staleCandidate && staleCandidate.stale) {
           inc('api_stale_served');
-          return withMetricHeaders(staleCandidate.response, { 'x-api-cache': 'STALE', 'x-api-circuit': 'OPEN' });
+          return withMetricHeaders(staleCandidate.response, withCacheDebugHeaders({ 'x-api-cache': 'STALE', 'x-api-circuit': 'OPEN' }, cacheMeta));
         }
         return new Response(JSON.stringify({ status: 'error', message: 'Circuit breaker open. Upstream temporarily paused.', request_id: requestId }), {
           status: 503,
@@ -442,7 +437,7 @@ async function handleApi(request, env, ctx) {
             recordApiCircuitFailure('Upstream status ' + res.status, env);
             if (staleCandidate && staleCandidate.stale) {
               inc('api_stale_served');
-              return withMetricHeaders(staleCandidate.response, { 'x-api-cache': 'STALE', 'x-api-fallback': 'ERROR' });
+              return withMetricHeaders(staleCandidate.response, withCacheDebugHeaders({ 'x-api-cache': 'STALE', 'x-api-fallback': 'ERROR' }, cacheMeta));
             }
           } else {
             recordApiCircuitSuccess();
@@ -452,12 +447,12 @@ async function handleApi(request, env, ctx) {
             const cacheable = buildCacheableApiResponse(res.clone(), ttl);
             if (ctx) ctx.waitUntil(caches.default.put(cacheKey, cacheable));
           }
-          return withMetricHeaders(res, { 'x-api-cache': 'MISS' });
+          return withMetricHeaders(res, withCacheDebugHeaders({ 'x-api-cache': 'MISS' }, cacheMeta));
         } catch (error) {
           recordApiCircuitFailure(error, env);
           if (staleCandidate && staleCandidate.stale) {
             inc('api_stale_served');
-            return withMetricHeaders(staleCandidate.response, { 'x-api-cache': 'STALE', 'x-api-fallback': 'EXCEPTION' });
+            return withMetricHeaders(staleCandidate.response, withCacheDebugHeaders({ 'x-api-cache': 'STALE', 'x-api-fallback': 'EXCEPTION' }, cacheMeta));
           }
           throw error;
         } finally {
@@ -534,7 +529,7 @@ async function handleApiBatch(request, env, ctx, requestId, contentType, parsedB
   const results = await Promise.all(items.map(async function (item, index) {
     const action = String(item.action || '');
     mapIncLimited(_topApiActions, 'batch:' + action, 80);
-    const cacheMeta = getCacheMetaFromParsed(item);
+    const cacheMeta = await augmentCacheMetaWithManifest(getCacheMetaFromParsed(item), item, env);
     const ttl = cacheMeta ? Number(cacheTtls[cacheMeta.action] || 0) : 0;
     const cacheKey = (ttl > 0) ? await buildApiCacheKey(request.url, cacheMeta.action, cacheMeta.key) : null;
     const cached = cacheKey ? await caches.default.match(cacheKey) : null;
@@ -690,6 +685,106 @@ function getCacheMetaFromParsed(obj) {
   return { action, key: keyObj };
 }
 
+function getCacheManifestRefreshMs(env) {
+  return Math.max(1000, Number(env && env.CACHE_MANIFEST_TTL_MS || 5000));
+}
+
+function getActionCacheTags(action, payload) {
+  const name = String(action || '');
+  if (!name) return [];
+  switch (name) {
+    case 'get_global_settings':
+      return ['settings'];
+    case 'get_product':
+      return ['products', 'settings'];
+    case 'get_products':
+      return (payload && (payload.email || payload.target_user_id))
+        ? ['products', 'orders', 'users']
+        : ['products'];
+    case 'get_page_content':
+    case 'get_pages':
+      return ['pages'];
+    default:
+      return [];
+  }
+}
+
+function buildCacheManifestToken(manifest, tags) {
+  const list = Array.isArray(tags) ? tags.filter(Boolean) : [];
+  if (!list.length) return '';
+  const versions = manifest && manifest.versions ? manifest.versions : {};
+  const parts = [];
+  for (let i = 0; i < list.length; i++) {
+    const tag = String(list[i] || '');
+    const version = Number(versions[tag] || 0);
+    parts.push(tag + ':' + version);
+  }
+  return parts.join('|');
+}
+
+async function fetchCacheManifest(env) {
+  const gasUrl = env && env.APP_GAS_URL ? String(env.APP_GAS_URL) : '';
+  if (!gasUrl) return null;
+  const upstream = await fetchWithRetry(gasUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'get_cache_manifest' })
+  }, { maxAttempts: 3, timeoutMs: 15000 });
+  const payload = parseJsonObject(await upstream.text());
+  if (!payload || payload.status !== 'success' || !payload.data || typeof payload.data !== 'object') return null;
+  return payload.data;
+}
+
+async function getCacheManifestForRequest(env) {
+  const ttlMs = getCacheManifestRefreshMs(env);
+  const now = Date.now();
+  if (_cacheManifestState.value && (now - Number(_cacheManifestState.fetched_at || 0)) <= ttlMs) {
+    return _cacheManifestState.value;
+  }
+  if (_cacheManifestState.pending) return _cacheManifestState.pending;
+  const pending = (async function() {
+    try {
+      const fresh = await fetchCacheManifest(env);
+      if (fresh && fresh.versions) {
+        _cacheManifestState.value = fresh;
+        _cacheManifestState.fetched_at = Date.now();
+      }
+      return _cacheManifestState.value || { versions: {} };
+    } catch (e) {
+      return _cacheManifestState.value || { versions: {} };
+    } finally {
+      _cacheManifestState.pending = null;
+    }
+  })();
+  _cacheManifestState.pending = pending;
+  return pending;
+}
+
+async function augmentCacheMetaWithManifest(baseMeta, payload, env) {
+  if (!baseMeta || !baseMeta.action) return baseMeta;
+  const tags = getActionCacheTags(baseMeta.action, payload);
+  if (!tags.length) return baseMeta;
+  try {
+    const manifest = await getCacheManifestForRequest(env);
+    const token = buildCacheManifestToken(manifest, tags);
+    if (!token) return baseMeta;
+    return {
+      action: baseMeta.action,
+      key: Object.assign({}, baseMeta.key || {}, { __cache_manifest_token: token }),
+      tags: tags,
+      versionToken: token
+    };
+  } catch (e) {
+    return baseMeta;
+  }
+}
+
+function withCacheDebugHeaders(base, cacheMeta) {
+  const extra = Object.assign({}, base || {});
+  if (cacheMeta && cacheMeta.versionToken) extra['x-cache-version'] = cacheMeta.versionToken;
+  return extra;
+}
+
 function getApiStaleWindowSeconds(ttlSeconds, env) {
   const multiplier = Math.max(2, Number(env && env.API_CACHE_STALE_MULTIPLIER || 10));
   const minWindow = Math.max(60, Number(env && env.API_CACHE_STALE_MIN_SECONDS || 300));
@@ -720,30 +815,30 @@ function buildCacheableApiResponse(response, ttlSeconds) {
 
 async function handleHealth(env, ctx) {
   const startedAt = Date.now();
-  const gasUrl = env.MOOTA_GAS_URL;
+  const gasUrl = env.APP_GAS_URL;
   if (!gasUrl) {
-    return new Response(JSON.stringify({ status: 'ok', upstream: 'not_configured' }), {
+    return new Response(JSON.stringify({ status: "ok", upstream: "not_configured" }), {
       status: 200,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { "Content-Type": "application/json" }
     });
   }
   try {
-    const cacheKey = new Request('https://local.health/cache', { method: 'GET' });
+    const cacheKey = new Request("https://local.health/cache", { method: "GET" });
     const cached = await caches.default.match(cacheKey);
     if (cached) return cached;
-    const res = await fetchWithRetry(gasUrl, { method: 'GET' }, { maxAttempts: 3, timeoutMs: 8000 });
+    const res = await fetchWithRetry(gasUrl, { method: "GET" }, { maxAttempts: 3, timeoutMs: 8000 });
     const ms = Date.now() - startedAt;
-    const out = new Response(JSON.stringify({ status: 'ok', upstream: res.ok ? 'ok' : 'degraded', upstream_status: res.status, latency_ms: ms }), {
+    const out = new Response(JSON.stringify({ status: "ok", upstream: res.ok ? "ok" : "degraded", upstream_status: res.status, latency_ms: ms }), {
       status: res.ok ? 200 : 502,
-      headers: { 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=0, s-maxage=30' }
+      headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=0, s-maxage=30" }
     });
     if (ctx) ctx.waitUntil(caches.default.put(cacheKey, out.clone()));
     return out;
   } catch (e) {
     const ms = Date.now() - startedAt;
-    return new Response(JSON.stringify({ status: 'error', upstream: 'down', latency_ms: ms, message: String(e) }), {
+    return new Response(JSON.stringify({ status: "error", upstream: "down", latency_ms: ms, message: String(e) }), {
       status: 502,
-      headers: { 'Content-Type': 'application/json' }
+      headers: { "Content-Type": "application/json" }
     });
   }
 }
@@ -913,56 +1008,6 @@ async function sha256Base64Url(text) {
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
-function normalizeMootaSignature(value) {
-  let normalized = String(value || '').trim();
-  if (!normalized) return '';
-  normalized = normalized.replace(/^sha256=/i, '').trim();
-  return normalized.replace(/[^a-f0-9]/ig, '').toLowerCase();
-}
-
-function maskMootaSignature(value) {
-  const sig = String(value || '');
-  if (!sig) return '';
-  if (sig.length <= 12) return sig;
-  return sig.slice(0, 8) + '...' + sig.slice(-4);
-}
-
-async function computeMootaHmacHex(text, secret) {
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(String(secret || '')),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-  const signed = await crypto.subtle.sign('HMAC', key, encoder.encode(String(text || '')));
-  const bytes = new Uint8Array(signed);
-  let hex = '';
-  for (let i = 0; i < bytes.length; i++) {
-    hex += bytes[i].toString(16).padStart(2, '0');
-  }
-  return hex;
-}
-
-async function verifyMootaSignature(text, secret, rawSignature) {
-  const normalizedSecret = String(secret || '').trim();
-  const received = normalizeMootaSignature(rawSignature);
-  if (!normalizedSecret) {
-    return { ok: false, code: 'missing_secret', received, expected: '' };
-  }
-  if (!received) {
-    return { ok: false, code: 'missing_signature', received: '', expected: '' };
-  }
-  const expected = await computeMootaHmacHex(text, normalizedSecret);
-  return {
-    ok: received === expected,
-    code: received === expected ? 'ok' : 'invalid_signature',
-    received,
-    expected
-  };
-}
-
 function maybeCompress(request, response) {
   // Let Cloudflare negotiate gzip/brotli at the edge.
   // Manual gzip here caused double-compressed HTML/CSS/JS in production.
@@ -1026,118 +1071,5 @@ function softRateLimitOk(request, rpm) {
     return entry.count <= rpm;
   } catch (e) {
     return true;
-  }
-}
-
-async function handleWebhook(request, gasUrl, secretToken) {
-  if (!gasUrl) {
-    return new Response(
-      JSON.stringify({ status: 'error', message: 'Missing environment variable MOOTA_GAS_URL' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
-  }
-
-  try {
-    const signature = request.headers.get('Signature')
-      || request.headers.get('X-Signature')
-      || request.headers.get('X-MOOTA-SIGNATURE')
-      || '';
-    const mootaUser = request.headers.get('X-MOOTA-USER') || '';
-    const mootaWebhook = request.headers.get('X-MOOTA-WEBHOOK') || '';
-    const userAgent = request.headers.get('User-Agent') || '';
-    const body = await request.text();
-
-    if (!signature) {
-      console.warn('[moota-webhook] Missing signature header', {
-        has_x_moota_user: !!mootaUser,
-        has_x_moota_webhook: !!mootaWebhook,
-        user_agent: userAgent,
-        worker_has_secret_token: !!String(secretToken || '').trim()
-      });
-      return new Response(
-        JSON.stringify({
-          status: 'error',
-          message: 'Missing Signature header from Moota webhook',
-          diagnostics: {
-            has_x_moota_user: !!mootaUser,
-            has_x_moota_webhook: !!mootaWebhook,
-            user_agent: userAgent || '',
-            worker_has_secret_token: !!String(secretToken || '').trim()
-          }
-        }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } }
-      );
-    }
-
-    let workerVerification = {
-      ok: false,
-      code: 'worker_secret_not_configured',
-      received: normalizeMootaSignature(signature),
-      expected: ''
-    };
-
-    if (String(secretToken || '').trim()) {
-      workerVerification = await verifyMootaSignature(body, secretToken, signature);
-      if (!workerVerification.ok) {
-        console.warn('[moota-webhook] Invalid signature at worker', {
-          validation_code: workerVerification.code,
-          received_signature: maskMootaSignature(workerVerification.received),
-          expected_signature: maskMootaSignature(workerVerification.expected),
-          has_x_moota_user: !!mootaUser,
-          has_x_moota_webhook: !!mootaWebhook
-        });
-        return new Response(
-          JSON.stringify({
-            status: 'error',
-            message: 'Invalid Signature at Worker. Secret Token di Worker tidak cocok dengan Signature dari Moota.',
-            diagnostics: {
-              validation_code: workerVerification.code,
-              received_signature: maskMootaSignature(workerVerification.received),
-              expected_signature: maskMootaSignature(workerVerification.expected),
-              has_x_moota_user: !!mootaUser,
-              has_x_moota_webhook: !!mootaWebhook
-            }
-          }),
-          { status: 401, headers: { 'Content-Type': 'application/json' } }
-        );
-      }
-    } else {
-      console.warn('[moota-webhook] MOOTA_TOKEN is not configured in Worker; skipping Worker-level signature verification');
-    }
-
-    const targetUrl = new URL(gasUrl);
-    targetUrl.searchParams.append('moota_forwarded', '1');
-    targetUrl.searchParams.append('moota_sig_present', '1');
-    targetUrl.searchParams.append('moota_signature', signature);
-    targetUrl.searchParams.append('moota_sig_verified', workerVerification.ok ? '1' : '0');
-    targetUrl.searchParams.append('moota_sig_verified_by', workerVerification.ok ? 'worker' : workerVerification.code);
-    if (mootaUser) targetUrl.searchParams.append('moota_user', mootaUser);
-    if (mootaWebhook) targetUrl.searchParams.append('moota_webhook', mootaWebhook);
-    if (userAgent) targetUrl.searchParams.append('moota_user_agent', userAgent.substring(0, 120));
-
-    let response;
-    try {
-      response = await fetchWithRetry(targetUrl.toString(), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body
-      }, { maxAttempts: 4, timeoutMs: 25000 });
-    } catch (err) {
-      return new Response(JSON.stringify({ status: 'error', message: 'GAS unreachable after retries: ' + String(err) }), {
-        status: 502,
-        headers: { 'Content-Type': 'application/json' }
-      });
-    }
-
-    const resultText = await response.text();
-    return new Response(resultText, {
-      status: response.status,
-      headers: { 'Content-Type': 'application/json' }
-    });
-  } catch (error) {
-    return new Response(
-      JSON.stringify({ status: 'error', message: String(error) }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
   }
 }

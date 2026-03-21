@@ -44,22 +44,33 @@
                 }
             }
 
-            const cachedStr = localStorage.getItem(CACHE_KEY);
-            let cached = null;
-            try { cached = JSON.parse(cachedStr); } catch(e){}
-            const now = Date.now();
+            const cacheApi = window.CEPAT_CACHE || null;
+            const cachedEntry = (cacheApi && typeof cacheApi.readEntry === 'function')
+                ? cacheApi.readEntry(CACHE_KEY, { tags: ['settings'], maxAge: CACHE_AGE })
+                : null;
+            let cached = (cachedEntry && !cachedEntry.missing)
+                ? (cachedEntry.payload || { data: cachedEntry.data, time: cachedEntry.time })
+                : null;
+            if (!cached) {
+                const cachedStr = localStorage.getItem(CACHE_KEY);
+                try { cached = JSON.parse(cachedStr); } catch(e){}
+            }
 
             if (cached && cached.data) {
                 applyGlobalSettings(cached.data);
             }
 
-            if (!cached || !cached.time || (now - cached.time > CACHE_AGE)) {
+            if (!cachedEntry || cachedEntry.stale) {
                 if(typeof SCRIPT_URL === 'undefined') { console.error("SCRIPT_URL belum didefinisikan di config.js!"); return; }
                 fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_global_settings' }) })
                     .then(res => res.json())
                     .then(r => {
                         if(r.status === 'success') {
-                            localStorage.setItem(CACHE_KEY, JSON.stringify({ data: r.data, time: now }));
+                            if (cacheApi && typeof cacheApi.writeEntry === 'function') {
+                                cacheApi.writeEntry(CACHE_KEY, r.data, { tags: ['settings'], time: Date.now() });
+                            } else {
+                                localStorage.setItem(CACHE_KEY, JSON.stringify({ data: r.data, time: Date.now() }));
+                            }
                             applyGlobalSettings(r.data); 
                         }
                     }).catch(e => console.error("Global Settings Sync Failed", e));
@@ -218,7 +229,13 @@
             }
 
             const cacheKeyUser = DASHBOARD_CACHE_KEY + '_' + userEmail;
-            const cachedDataStr = localStorage.getItem(cacheKeyUser);
+            const cacheApi = window.CEPAT_CACHE || null;
+            const cachedEntry = (cacheApi && typeof cacheApi.readEntry === 'function')
+                ? cacheApi.readEntry(cacheKeyUser, { tags: ['products', 'orders', 'users'], maxAge: DASHBOARD_CACHE_AGE })
+                : null;
+            const cachedDataStr = (cachedEntry && !cachedEntry.missing)
+                ? JSON.stringify(cachedEntry.payload || { data: cachedEntry.data, time: cachedEntry.time })
+                : localStorage.getItem(cacheKeyUser);
             let cachedData = null;
             let cachedAt = 0;
             let accessGrantedFromCache = false;
@@ -243,7 +260,7 @@
                 }
             }
 
-            if (cachedData && cachedAt && (Date.now() - cachedAt <= DASHBOARD_CACHE_AGE)) {
+            if (cachedData && (cachedEntry ? !cachedEntry.stale : (cachedAt && (Date.now() - cachedAt <= DASHBOARD_CACHE_AGE)))) {
                 if (!accessGrantedFromCache) {
                     showError("Maaf, Anda belum membeli produk ini atau akses pembayaran Anda telah ditangguhkan.");
                 }
@@ -263,7 +280,11 @@
                 if (r.status === 'success') {
                     // Update cache Dashboard agar selalu fresh tanpa menghapus field lain
                     const mergedData = Object.assign({}, cachedData || {}, r, { owned: r.owned || [], available: r.available || [] });
-                    localStorage.setItem(cacheKeyUser, JSON.stringify({ data: mergedData, time: Date.now() }));
+                    if (cacheApi && typeof cacheApi.writeEntry === 'function') {
+                        cacheApi.writeEntry(cacheKeyUser, mergedData, { tags: ['products', 'orders', 'users'], time: Date.now() });
+                    } else {
+                        localStorage.setItem(cacheKeyUser, JSON.stringify({ data: mergedData, time: Date.now() }));
+                    }
 
                     const product = (r.owned || []).find(p => p.id === productId);
 
@@ -292,6 +313,11 @@
         window.onload = () => {
             lucide.createIcons();
             verifyAccess();
+            if (window.CEPAT_CACHE && typeof window.CEPAT_CACHE.watchManifest === 'function' && !window.__CEPAT_ACCESS_WATCH__) {
+                window.__CEPAT_ACCESS_WATCH__ = window.CEPAT_CACHE.watchManifest(function() {
+                    verifyAccess();
+                }, { intervalMs: 15000 });
+            }
         };
     </script>
 </body>

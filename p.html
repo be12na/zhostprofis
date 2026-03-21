@@ -18,8 +18,13 @@
 
             function syncGlobalSettingsCache(data, timestamp) {
                 if (!data) return;
-                const payload = { data: data, time: Number(timestamp || Date.now()) };
-                try { localStorage.setItem(CACHE_KEY, JSON.stringify(payload)); } catch (e) {}
+                const cacheApi = window.CEPAT_CACHE || null;
+                if (cacheApi && typeof cacheApi.writeEntry === 'function') {
+                    cacheApi.writeEntry(CACHE_KEY, data, { tags: ['settings'], time: Number(timestamp || Date.now()) });
+                } else {
+                    const payload = { data: data, time: Number(timestamp || Date.now()) };
+                    try { localStorage.setItem(CACHE_KEY, JSON.stringify(payload)); } catch (e) {}
+                }
                 applyGlobalSettings(data);
             }
 
@@ -41,10 +46,17 @@
                 }
             }
 
-            const cachedStr = localStorage.getItem(CACHE_KEY);
-            let cached = null;
-            try { cached = JSON.parse(cachedStr); } catch(e){}
-            const now = Date.now();
+            const cacheApi = window.CEPAT_CACHE || null;
+            const cachedEntry = (cacheApi && typeof cacheApi.readEntry === 'function')
+                ? cacheApi.readEntry(CACHE_KEY, { tags: ['settings'], maxAge: CACHE_AGE })
+                : null;
+            let cached = (cachedEntry && !cachedEntry.missing)
+                ? (cachedEntry.payload || { data: cachedEntry.data, time: cachedEntry.time })
+                : null;
+            if (!cached) {
+                const cachedStr = localStorage.getItem(CACHE_KEY);
+                try { cached = JSON.parse(cachedStr); } catch(e){}
+            }
 
             if (cached && cached.data) {
                 applyGlobalSettings(cached.data);
@@ -53,7 +65,7 @@
                 key: CACHE_KEY,
                 maxAge: CACHE_AGE,
                 cached: cached,
-                isFresh: !!(cached && cached.time && (now - cached.time <= CACHE_AGE)),
+                isFresh: !!(cachedEntry ? !cachedEntry.stale : (cached && cached.time && (Date.now() - cached.time <= CACHE_AGE))),
                 apply: applyGlobalSettings,
                 sync: syncGlobalSettingsCache
             };
@@ -91,12 +103,6 @@
         const urlParams = new URLSearchParams(window.location.search);
         const slug = urlParams.get('s');
         const PAGE_CACHE_AGE = 5 * 60 * 1000;
-
-        // Capture Affiliate Ref
-        const ref = urlParams.get('ref') || urlParams.get('aff_id');
-        if(ref) {
-            localStorage.setItem('cepat_affiliate', ref);
-        }
 
         function injectMetaPixel(pixelId) {
             if(!pixelId) return;
@@ -182,7 +188,13 @@
             }
             
             const cacheKey = 'cepat_page_' + slug;
-            const cachedRaw = localStorage.getItem(cacheKey);
+            const cacheApi = window.CEPAT_CACHE || null;
+            const cachedEntry = (cacheApi && typeof cacheApi.readEntry === 'function')
+                ? cacheApi.readEntry(cacheKey, { tags: ['pages'], maxAge: PAGE_CACHE_AGE })
+                : null;
+            const cachedRaw = (cachedEntry && !cachedEntry.missing)
+                ? JSON.stringify(cachedEntry.payload || { data: cachedEntry.data, time: cachedEntry.time })
+                : localStorage.getItem(cacheKey);
             const globalCache = window.__CEPAT_GLOBAL_SETTINGS__ || {};
             let cachedData = null;
             let cachedAt = 0;
@@ -201,7 +213,7 @@
                 renderHTML(cachedData);
             }
 
-            const isPageStale = !cachedAt || ((Date.now() - cachedAt) > PAGE_CACHE_AGE);
+            const isPageStale = !!(cachedEntry ? cachedEntry.stale : (!cachedAt || ((Date.now() - cachedAt) > PAGE_CACHE_AGE)));
             const isSettingsStale = !globalCache.isFresh;
             if (cachedData && !isPageStale && !isSettingsStale) return;
 
@@ -240,10 +252,18 @@
                         const freshData = JSON.stringify(r);
                         const previousData = cachedData ? JSON.stringify(cachedData) : '';
                         if (previousData !== freshData) {
-                            localStorage.setItem(cacheKey, JSON.stringify({ data: r, time: Date.now() }));
+                            if (cacheApi && typeof cacheApi.writeEntry === 'function') {
+                                cacheApi.writeEntry(cacheKey, r, { tags: ['pages'], time: Date.now() });
+                            } else {
+                                localStorage.setItem(cacheKey, JSON.stringify({ data: r, time: Date.now() }));
+                            }
                             renderHTML(r);
                         } else if (cachedAt !== 0) {
-                            localStorage.setItem(cacheKey, JSON.stringify({ data: cachedData, time: Date.now() }));
+                            if (cacheApi && typeof cacheApi.writeEntry === 'function') {
+                                cacheApi.writeEntry(cacheKey, cachedData, { tags: ['pages'], time: Date.now() });
+                            } else {
+                                localStorage.setItem(cacheKey, JSON.stringify({ data: cachedData, time: Date.now() }));
+                            }
                         }
                     } else if (!cachedData) {
                         document.getElementById('loader').innerHTML = `<p class="text-red-500 font-bold text-center mt-20">${(r && r.message) || 'Halaman tidak ditemukan.'}</p>`;
@@ -259,6 +279,11 @@
         window.onload = () => {
             lucide.createIcons();
             loadPage();
+            if (window.CEPAT_CACHE && typeof window.CEPAT_CACHE.watchManifest === 'function' && !window.__CEPAT_PAGE_WATCH__) {
+                window.__CEPAT_PAGE_WATCH__ = window.CEPAT_CACHE.watchManifest(function() {
+                    loadPage();
+                }, { intervalMs: 15000 });
+            }
         };
     </script>
 </body>

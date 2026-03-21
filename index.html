@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kelas Jagoan | Produk Digital Siap Pakai</title>
-    <meta name="title" content="Kelas Jagoan | Produk Digital Siap Pakai">
-    <meta name="description" content="Template, toolkit, dan sistem siap pakai untuk membantu proses jualan digital terasa lebih cepat dan tertata.">
+    <title>Kelas Jagoan | Produk Fisik Pilihan</title>
+    <meta name="title" content="Kelas Jagoan | Produk Fisik Pilihan">
+    <meta name="description" content="Produk fisik pilihan dengan spesifikasi jelas, cara pakai praktis, pengiriman aman, dan kebijakan retur yang transparan.">
     <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
     <meta name="theme-color" content="#4f46e5">
     <meta name="image" content="assets/seo/og-default.png">
@@ -13,19 +13,19 @@
     <meta property="og:locale" content="id_ID">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="Kelas Jagoan">
-    <meta property="og:title" content="Kelas Jagoan | Produk Digital Siap Pakai">
-    <meta property="og:description" content="Template, toolkit, dan sistem siap pakai untuk membantu proses jualan digital terasa lebih cepat dan tertata.">
+    <meta property="og:title" content="Kelas Jagoan | Produk Fisik Pilihan">
+    <meta property="og:description" content="Produk fisik pilihan dengan spesifikasi jelas, cara pakai praktis, pengiriman aman, dan kebijakan retur yang transparan.">
     <meta property="og:url" content="./">
     <meta property="og:image" content="assets/seo/og-default.png">
     <meta property="og:image:type" content="image/png">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
-    <meta property="og:image:alt" content="Produk digital siap pakai untuk membantu proses jualan digital terasa lebih cepat dan tertata.">
+    <meta property="og:image:alt" content="Produk fisik pilihan dengan spesifikasi jelas, pengiriman aman, dan layanan belanja terpercaya.">
     <meta name="twitter:card" content="summary_large_image">
-    <meta name="twitter:title" content="Kelas Jagoan | Produk Digital Siap Pakai">
-    <meta name="twitter:description" content="Template, toolkit, dan sistem siap pakai untuk membantu proses jualan digital terasa lebih cepat dan tertata.">
+    <meta name="twitter:title" content="Kelas Jagoan | Produk Fisik Pilihan">
+    <meta name="twitter:description" content="Produk fisik pilihan dengan spesifikasi jelas, cara pakai praktis, pengiriman aman, dan kebijakan retur yang transparan.">
     <meta name="twitter:image" content="assets/seo/og-default.png">
-    <meta name="twitter:image:alt" content="Produk digital siap pakai untuk membantu proses jualan digital terasa lebih cepat dan tertata.">
+    <meta name="twitter:image:alt" content="Produk fisik pilihan dengan spesifikasi jelas, pengiriman aman, dan layanan belanja terpercaya.">
     <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="dns-prefetch" href="https://unpkg.com">
@@ -47,7 +47,7 @@
                 titleSeparator: ' | ',
                 robots: 'index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1',
                 defaultSiteName: 'Kelas Jagoan',
-                defaultDescription: 'Template, toolkit, dan sistem siap pakai untuk membantu proses jualan digital terasa lebih cepat dan tertata.',
+                defaultDescription: 'Produk fisik pilihan dengan spesifikasi jelas, cara pakai praktis, pengiriman aman, dan kebijakan retur yang transparan.',
                 defaultOgImagePath: 'assets/seo/og-default.png',
                 defaultOgImageType: 'image/png',
                 defaultOgImageWidth: 1200,
@@ -228,11 +228,11 @@
                 if (!signals || !signals.titles || !signals.titles.length) return '';
                 const featured = signals.titles.slice(0, 3);
                 if (featured.length === 1) {
-                    return `Temukan ${featured[0]} dan produk digital siap pakai lainnya.`;
+                    return `Temukan ${featured[0]} dan produk fisik pilihan lainnya.`;
                 }
                 const tail = featured.slice(0, featured.length - 1).join(', ');
                 const last = featured[featured.length - 1];
-                return `Temukan ${tail}, dan ${last} untuk membantu proses jualan digital lebih cepat.`;
+                return `Temukan ${tail}, dan ${last} dengan spesifikasi jelas serta pengiriman aman.`;
             };
 
             const composeDescription = (settings, siteName, productSignals) => {
@@ -516,8 +516,13 @@
 
             function syncGlobalSettingsCache(data, timestamp) {
                 if (!data) return;
-                const payload = { data: data, time: Number(timestamp || Date.now()) };
-                try { localStorage.setItem(CACHE_KEY, JSON.stringify(payload)); } catch (e) {}
+                const cacheApi = window.CEPAT_CACHE || null;
+                if (cacheApi && typeof cacheApi.writeEntry === 'function') {
+                    cacheApi.writeEntry(CACHE_KEY, data, { tags: ['settings'], time: Number(timestamp || Date.now()) });
+                } else {
+                    const payload = { data: data, time: Number(timestamp || Date.now()) };
+                    try { localStorage.setItem(CACHE_KEY, JSON.stringify(payload)); } catch (e) {}
+                }
                 applyGlobalSettings(data);
             }
 
@@ -586,17 +591,24 @@
                 syncSeo({ settings: data, reason: 'global-settings' });
             }
 
-            const cachedStr = localStorage.getItem(CACHE_KEY);
-            let cached = null;
-            try { cached = JSON.parse(cachedStr); } catch(e){}
-            const now = Date.now();
+            const cacheApi = window.CEPAT_CACHE || null;
+            const cachedEntry = (cacheApi && typeof cacheApi.readEntry === 'function')
+                ? cacheApi.readEntry(CACHE_KEY, { tags: ['settings'], maxAge: CACHE_AGE })
+                : null;
+            let cached = (cachedEntry && !cachedEntry.missing)
+                ? (cachedEntry.payload || { data: cachedEntry.data, time: cachedEntry.time })
+                : null;
+            if (!cached) {
+                const cachedStr = localStorage.getItem(CACHE_KEY);
+                try { cached = JSON.parse(cachedStr); } catch(e){}
+            }
 
             if (cached && cached.data) { applyGlobalSettings(cached.data); }
             window.__CEPAT_GLOBAL_SETTINGS__ = {
                 key: CACHE_KEY,
                 maxAge: CACHE_AGE,
                 cached: cached,
-                isFresh: !!(cached && cached.time && (now - cached.time <= CACHE_AGE)),
+                isFresh: !!(cachedEntry ? !cachedEntry.stale : (cached && cached.time && (Date.now() - cached.time <= CACHE_AGE))),
                 apply: applyGlobalSettings,
                 sync: syncGlobalSettingsCache
             };
@@ -643,7 +655,7 @@
     <header class="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50">
         <div class="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center gap-4">
            <div class="flex-1 flex items-center gap-3 min-w-0">
-                <img id="dyn-site-logo" src="" alt="" class="h-8 md:h-10 w-auto hidden select-none object-contain flex-shrink-0 transition-transform hover:scale-105" loading="lazy">
+                <img id="dyn-site-logo" src="data:," alt="" class="h-8 md:h-10 w-auto hidden select-none object-contain flex-shrink-0 transition-transform hover:scale-105" loading="lazy">
                 <i id="logo-fallback" data-lucide="layers" class="w-8 h-8 text-indigo-600 flex-shrink-0 transition-transform hover:rotate-12"></i>
                 <strong class="dyn-site-name text-lg md:text-2xl font-black text-indigo-600 tracking-tighter uppercase truncate block">KELAS JAGOAN</strong>
             </div>
@@ -655,29 +667,29 @@
     </header>
 
     <section class="max-w-7xl mx-auto px-6 py-20 text-center">
-        <div class="inline-block bg-indigo-50 text-indigo-600 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest mb-6 fade-in">Siap Pakai untuk Jualan Digital</div>
-        <h1 data-seo-title class="text-4xl md:text-6xl font-black tracking-tight mb-6 text-slate-900 fade-in delay-1">Bangun sistem jualan digital yang bisa langsung dipakai &mdash; tanpa pusing setup dari nol</h1>
-        <p data-seo-description class="text-xl md:text-2xl text-slate-500 max-w-4xl mx-auto mb-10 fade-in delay-2 font-medium">Berhenti buang waktu di setup teknis yang berantakan. Kelas Jagoan membantu Anda mulai jualan lebih cepat dengan template, toolkit, dan sistem yang sudah siap dipakai</p>
-        <a href="#katalog" class="inline-block bg-slate-900 text-white px-8 py-4 rounded-full font-bold text-lg shadow-xl shadow-slate-300 hover:scale-105 transition-all fade-in delay-3">Lihat Produk Siap Pakai</a>
+        <div class="inline-block bg-indigo-50 text-indigo-600 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest mb-6 fade-in">Produk Fisik Pilihan</div>
+        <h1 data-seo-title class="text-4xl md:text-6xl font-black tracking-tight mb-6 text-slate-900 fade-in delay-1">Temukan produk fisik berkualitas dengan detail jelas dan siap dikirim ke alamat Anda</h1>
+        <p data-seo-description class="text-xl md:text-2xl text-slate-500 max-w-4xl mx-auto mb-10 fade-in delay-2 font-medium">Belanja lebih tenang dengan spesifikasi yang transparan, panduan penggunaan singkat, pengemasan aman, dan layanan pengiriman yang rapi hingga produk tiba di tangan Anda</p>
+        <a href="#katalog" class="inline-block bg-slate-900 text-white px-8 py-4 rounded-full font-bold text-lg shadow-xl shadow-slate-300 hover:scale-105 transition-all fade-in delay-3">Lihat Katalog Produk</a>
     </section>
 
     <section class="max-w-4xl mx-auto px-6 pb-6 md:pb-10">
         <div class="rounded-[1.75rem] border border-indigo-100 bg-white/95 px-6 py-6 md:px-8 md:py-7 text-center shadow-sm shadow-slate-200">
-            <p class="text-sm md:text-base leading-7 text-slate-600 font-medium">Anda tidak perlu langsung beli semuanya atau mengubah sistem sekaligus. Mulai dari yang paling ringan, lalu kembangkan sesuai kebutuhan</p>
+            <p class="text-sm md:text-base leading-7 text-slate-600 font-medium">Anda tidak perlu bingung memilih. Cek spesifikasi, ukuran, bahan, dan panduan penggunaan singkatnya, lalu pilih produk yang paling pas untuk kebutuhan Anda</p>
         </div>
     </section>
 
     <section id="katalog" class="max-w-7xl mx-auto px-5 sm:px-6 lg:px-8 py-8 md:py-10 mb-20 scroll-mt-24">
         <div class="max-w-2xl mx-auto text-center mb-8 md:mb-10">
             <div class="inline-flex items-center rounded-full border border-indigo-100 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-indigo-600 shadow-sm shadow-slate-100">Pilih Sesuai Kebutuhan</div>
-            <h2 class="mt-4 text-2xl md:text-3xl font-black tracking-tight text-slate-900">Temukan produk yang bisa langsung dipakai, dipelajari, lalu diadaptasi ke bisnis Anda</h2>
-            <p class="mt-3 text-sm md:text-base text-slate-500">Setiap produk di Kelas Jagoan dirancang supaya tidak berhenti di teori. Anda bisa mulai dari toolkit gratis, lanjut ke ecourse praktis, lalu pilih sistem yang membantu operasional jualan digital terasa lebih ringan dan tertata</p>
+            <h2 class="mt-4 text-2xl md:text-3xl font-black tracking-tight text-slate-900">Temukan produk fisik dengan spesifikasi jelas, penggunaan praktis, dan pengiriman aman</h2>
+            <p class="mt-3 text-sm md:text-base text-slate-500">Setiap produk di Kelas Jagoan dilengkapi informasi ukuran atau material, cara penggunaan, estimasi pengiriman, serta kebijakan retur agar Anda bisa belanja dengan lebih yakin</p>
         </div>
         
         <div id="public-products" class="catalog-grid">
             <div id="katalog-loader" class="col-span-full text-center py-10 rounded-[1.5rem] border border-dashed border-slate-200 bg-white/90 shadow-sm">
                 <div class="animate-spin w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full mx-auto mb-4"></div>
-                <p class="text-slate-400 text-[11px] font-bold uppercase tracking-[0.22em] animate-pulse">Menyiapkan Produk Siap Pakai...</p>
+                <p class="text-slate-400 text-[11px] font-bold uppercase tracking-[0.22em] animate-pulse">Menyiapkan Katalog Produk...</p>
             </div>
         </div>
     </section>
@@ -685,21 +697,21 @@
     <section id="faq" class="max-w-5xl mx-auto px-6 pb-20">
         <div class="max-w-2xl mx-auto text-center mb-8 md:mb-10">
             <div class="inline-flex items-center rounded-full border border-indigo-100 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-indigo-600 shadow-sm shadow-slate-100">Mini FAQ</div>
-            <h2 class="mt-4 text-2xl md:text-3xl font-black tracking-tight text-slate-900">Pertanyaan singkat sebelum Anda mulai</h2>
+            <h2 class="mt-4 text-2xl md:text-3xl font-black tracking-tight text-slate-900">Pertanyaan singkat sebelum Anda checkout</h2>
         </div>
 
         <div class="grid gap-4">
             <article class="rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200">
-                <h3 class="text-base md:text-lg font-bold text-slate-900">Apakah produk di Kelas Jagoan cocok untuk pemula?</h3>
-                <p class="mt-3 text-sm md:text-base leading-7 text-slate-600">Ya. Fokusnya membantu Anda mulai lebih cepat tanpa harus memahami sistem web yang rumit dari awal</p>
+                <h3 class="text-base md:text-lg font-bold text-slate-900">Apakah spesifikasi produk dijelaskan dengan lengkap?</h3>
+                <p class="mt-3 text-sm md:text-base leading-7 text-slate-600">Ya. Setiap halaman produk menampilkan informasi penting seperti ukuran, bahan, warna atau varian, isi paket, dan detail yang membantu Anda memilih dengan lebih yakin</p>
             </article>
             <article class="rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200">
-                <h3 class="text-base md:text-lg font-bold text-slate-900">Apakah saya harus bisa coding?</h3>
-                <p class="mt-3 text-sm md:text-base leading-7 text-slate-600">Tidak. Produk dirancang untuk penggunaan praktis tanpa perlu membangun website sendiri</p>
+                <h3 class="text-base md:text-lg font-bold text-slate-900">Bagaimana cara penggunaan dan perawatannya?</h3>
+                <p class="mt-3 text-sm md:text-base leading-7 text-slate-600">Ikuti panduan singkat pada halaman produk atau instruksi yang disertakan di paket. Dengan pemakaian dan perawatan yang tepat, produk akan nyaman digunakan lebih lama</p>
             </article>
             <article class="rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200">
-                <h3 class="text-base md:text-lg font-bold text-slate-900">Apakah produknya langsung bisa dipakai?</h3>
-                <p class="mt-3 text-sm md:text-base leading-7 text-slate-600">Ya, dengan panduan yang tersedia di masing-masing halaman produk</p>
+                <h3 class="text-base md:text-lg font-bold text-slate-900">Bagaimana proses pengiriman dan kebijakan retur?</h3>
+                <p class="mt-3 text-sm md:text-base leading-7 text-slate-600">Pesanan diproses secepatnya, dikemas aman, dan dikirim melalui layanan yang tersedia. Jika produk rusak, salah kirim, atau tidak sesuai ketentuan, Anda bisa mengajukan retur sesuai kebijakan yang berlaku</p>
             </article>
         </div>
     </section>
@@ -708,7 +720,7 @@
         <div class="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-3 gap-8 text-center md:text-left">
             <div>
                 <h3 class="text-xl font-black text-indigo-600 mb-4 dyn-site-name uppercase">KELAS JAGOAN</h3>
-                <p class="text-sm text-slate-500 dyn-site-tagline">Template, toolkit, dan sistem siap pakai untuk membantu proses jualan digital terasa lebih cepat dan tertata.</p>
+                <p class="text-sm text-slate-500 dyn-site-tagline">Produk fisik pilihan dengan spesifikasi jelas, panduan penggunaan singkat, pengiriman aman, dan layanan belanja yang transparan.</p>
             </div>
             <div>
                 <h4 class="font-bold mb-4 text-slate-800">Informasi</h4>
@@ -746,22 +758,13 @@
                 return;
             }
 
-            // Dapatkan Affiliate Ref (URL Priority -> LocalStorage Fallback)
-            const urlParams = new URLSearchParams(window.location.search);
-            const affRef = urlParams.get('ref') || urlParams.get('aff_id') || localStorage.getItem('cepat_affiliate');
-            const affParam = affRef ? `&ref=${affRef}` : '';
-
             container.innerHTML = [...products].reverse().map((p, index) => {
                 let delayClass = `delay-${(index % 3) + 1}`;
                 const fallbackLetter = String(p.title || 'P').trim().charAt(0).toUpperCase() || 'P';
                 
                 // Logic URL Detail (Bisa ke LP atau Checkout)
                 let detailUrl = (p.lp_url && p.lp_url !== "") ? p.lp_url : `checkout.html?id=${p.id}`;
-                if (affRef) {
-                    detailUrl += (detailUrl.includes('?') ? '&' : '?') + `ref=${affRef}`;
-                }
-
-                const checkoutUrl = `checkout.html?id=${p.id}${affParam}`;
+                const checkoutUrl = `checkout.html?id=${p.id}`;
 
                 const imgUrl = p.image_url || '';
                 const webpUrl = imgUrl && !imgUrl.endsWith('.webp') && imgUrl.includes('imagekit.io') ? imgUrl + '?tr=f-webp,q-75' : imgUrl;
@@ -776,9 +779,9 @@
 
                     <div class="flex flex-1 flex-col pt-4">
                         <div class="space-y-2">
-                            <p class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Siap Pakai</p>
+                            <p class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Produk Fisik</p>
                             <h3 class="catalog-title text-sm md:text-[15px] font-bold leading-snug text-slate-800 line-clamp-2">${p.title}</h3>
-                            <p class="catalog-desc text-[11px] md:text-xs leading-5 text-slate-500 line-clamp-3">Materi dan template praktis untuk membantu Anda merapikan proses jualan digital tanpa langkah teknis yang bikin lambat</p>
+                            <p class="catalog-desc text-[11px] md:text-xs leading-5 text-slate-500 line-clamp-3">Spesifikasi jelas, panduan penggunaan singkat, dan pengiriman aman untuk membantu Anda belanja dengan lebih yakin</p>
                             <p data-product-desc class="text-[10px] md:text-[11px] leading-5 text-slate-400 line-clamp-2" style="min-height: 2.5rem;">${p.desc || ''}</p>
                         </div>
 
@@ -788,7 +791,7 @@
                                     <p class="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Harga</p>
                                     <p class="text-sm md:text-base font-black tracking-tight text-slate-900">Rp ${Number(p.harga).toLocaleString('id-ID')}</p>
                                 </div>
-                                <span class="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-500">Siap Dipakai</span>
+                                <span class="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-500">Siap Kirim</span>
                             </div>
 
                             <div class="grid grid-cols-2 gap-2">
@@ -817,7 +820,13 @@
 
         // --> FUNGSI LOADING SAT SET (Optimistic UI & Background Sync)
         async function loadPublicCatalog() {
-            const cachedData = localStorage.getItem(CACHE_KEY_CATALOG);
+            const cacheApi = window.CEPAT_CACHE || null;
+            const cachedEntry = (cacheApi && typeof cacheApi.readEntry === 'function')
+                ? cacheApi.readEntry(CACHE_KEY_CATALOG, { tags: ['products'], maxAge: CACHE_AGE_CATALOG })
+                : null;
+            const cachedData = (cachedEntry && !cachedEntry.missing)
+                ? JSON.stringify(cachedEntry.payload || { data: cachedEntry.data, time: cachedEntry.time })
+                : localStorage.getItem(CACHE_KEY_CATALOG);
             const globalCache = window.__CEPAT_GLOBAL_SETTINGS__ || {};
             let cachedPayload = null;
             try { cachedPayload = cachedData ? JSON.parse(cachedData) : null; } catch(e) { cachedPayload = null; }
@@ -844,7 +853,7 @@
             // Pengecekan data terbaru di belakang layar
             try {
                 if(typeof SCRIPT_URL === 'undefined') return; // Cek SCRIPT_URL dari config.js
-                const isCatalogStale = !cachedAt || ((Date.now() - cachedAt) > CACHE_AGE_CATALOG);
+                const isCatalogStale = !!(cachedEntry ? cachedEntry.stale : (!cachedAt || ((Date.now() - cachedAt) > CACHE_AGE_CATALOG)));
                 const isSettingsStale = !globalCache.isFresh;
                 if (cachedList && !isCatalogStale && !isSettingsStale) return;
 
@@ -884,7 +893,11 @@
                         const data = Array.isArray(r.available) ? r.available : [];
                         const freshData = JSON.stringify({ data: data, time: Date.now() });
                         if(cachedData !== freshData) {
-                            localStorage.setItem(CACHE_KEY_CATALOG, freshData);
+                            if (cacheApi && typeof cacheApi.writeEntry === 'function') {
+                                cacheApi.writeEntry(CACHE_KEY_CATALOG, data, { tags: ['products'], time: Date.now() });
+                            } else {
+                                localStorage.setItem(CACHE_KEY_CATALOG, freshData);
+                            }
                             renderCatalog(data);
                         }
                     }
@@ -903,6 +916,11 @@
         window.onload = () => { 
             lucide.createIcons(); 
             loadPublicCatalog(); 
+            if (window.CEPAT_CACHE && typeof window.CEPAT_CACHE.watchManifest === 'function' && !window.__CEPAT_PUBLIC_CATALOG_WATCH__) {
+                window.__CEPAT_PUBLIC_CATALOG_WATCH__ = window.CEPAT_CACHE.watchManifest(function() {
+                    loadPublicCatalog();
+                }, { intervalMs: 15000 });
+            }
         };
     </script>
 </body>

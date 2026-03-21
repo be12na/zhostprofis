@@ -58,22 +58,33 @@
                 }
             }
 
-            const cachedStr = localStorage.getItem(CACHE_KEY);
-            let cached = null;
-            try { cached = JSON.parse(cachedStr); } catch(e){}
-            const now = Date.now();
+            const cacheApi = window.CEPAT_CACHE || null;
+            const cachedEntry = (cacheApi && typeof cacheApi.readEntry === 'function')
+                ? cacheApi.readEntry(CACHE_KEY, { tags: ['settings'], maxAge: CACHE_AGE })
+                : null;
+            let cached = (cachedEntry && !cachedEntry.missing)
+                ? (cachedEntry.payload || { data: cachedEntry.data, time: cachedEntry.time })
+                : null;
+            if (!cached) {
+                const cachedStr = localStorage.getItem(CACHE_KEY);
+                try { cached = JSON.parse(cachedStr); } catch(e){}
+            }
 
             if (cached && cached.data) {
                 applyGlobalSettings(cached.data);
             }
 
-            if (!cached || !cached.time || (now - cached.time > CACHE_AGE)) {
+            if (!cachedEntry || cachedEntry.stale) {
                 if(typeof SCRIPT_URL === 'undefined') return;
                 fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify({ action: 'get_global_settings' }) })
                     .then(res => res.json())
                     .then(r => {
                         if(r.status === 'success') {
-                            localStorage.setItem(CACHE_KEY, JSON.stringify({ data: r.data, time: now }));
+                            if (cacheApi && typeof cacheApi.writeEntry === 'function') {
+                                cacheApi.writeEntry(CACHE_KEY, r.data, { tags: ['settings'], time: Date.now() });
+                            } else {
+                                localStorage.setItem(CACHE_KEY, JSON.stringify({ data: r.data, time: Date.now() }));
+                            }
                             applyGlobalSettings(r.data); 
                         }
                     }).catch(e => console.error("Global Settings Sync Failed", e));
@@ -117,7 +128,7 @@
     <main class="min-h-screen flex items-center justify-center p-6">
       <div class="w-full max-w-xl">
         <div class="mb-6 flex items-center justify-center gap-3">
-            <img id="dyn-site-logo" src="" alt="" class="h-10 w-auto hidden select-none" loading="lazy">
+            <img id="dyn-site-logo" src="data:," alt="" class="h-10 w-auto hidden select-none" loading="lazy">
             <div id="logo-fallback" class="w-10 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center brand-badge">
                 <i data-lucide="layers" class="w-5 h-5"></i>
             </div>
@@ -255,17 +266,32 @@
 
                     const bootAt = Date.now();
                     if (r.dashboard) {
+                        if (window.CEPAT_CACHE && r.dashboard.cache_manifest && typeof window.CEPAT_CACHE.applyManifest === 'function') {
+                            window.CEPAT_CACHE.applyManifest(r.dashboard.cache_manifest);
+                        }
                         const combined = {
                             ...r.dashboard.products,
                             pages: r.dashboard.pages,
                             settings: r.dashboard.settings,
                             user: r.dashboard.user,
-                            affiliate_pixels: r.dashboard.affiliate_pixels
+                            my_pages: r.dashboard.my_pages,
+                            orders: r.dashboard.orders
                         };
-                        localStorage.setItem('cepat_dashboard_data_' + r.data.email, JSON.stringify({ data: combined, time: bootAt }));
+                        if (window.CEPAT_CACHE && typeof window.CEPAT_CACHE.writeEntry === 'function') {
+                            window.CEPAT_CACHE.writeEntry('cepat_dashboard_data_' + r.data.email, combined, {
+                                tags: ['settings', 'products', 'pages', 'orders', 'users'],
+                                time: bootAt
+                            });
+                        } else {
+                            localStorage.setItem('cepat_dashboard_data_' + r.data.email, JSON.stringify({ data: combined, time: bootAt }));
+                        }
                         sessionStorage.setItem('dashboard_bootstrap_time', String(bootAt));
                         if (r.dashboard.settings) {
-                            localStorage.setItem('cepat_global_settings', JSON.stringify({ data: r.dashboard.settings, time: bootAt }));
+                            if (window.CEPAT_CACHE && typeof window.CEPAT_CACHE.writeEntry === 'function') {
+                                window.CEPAT_CACHE.writeEntry('cepat_global_settings', r.dashboard.settings, { tags: ['settings'], time: bootAt });
+                            } else {
+                                localStorage.setItem('cepat_global_settings', JSON.stringify({ data: r.dashboard.settings, time: bootAt }));
+                            }
                         }
                     }
 
