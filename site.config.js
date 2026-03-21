@@ -14,17 +14,17 @@
  */
 var SITE_CONFIG = {
     // ── Domain Utama (Production) ──────────────────────────
-    PRIMARY_DOMAIN: 'kelasjagoan.my.id',
+    PRIMARY_DOMAIN: 'profis.zhost.digital',
 
     // ── Daftar Domain yang Diizinkan ───────────────────────
     ALLOWED_DOMAINS: [
-        'kelasjagoan.my.id',
-        'www.kelasjagoan.my.id'
+        'profis.zhost.digital',
+        'www.profis.zhost.digital'
     ],
 
     // ── Pattern Subdomain yang Diizinkan ───────────────────
     ALLOWED_SUBDOMAIN_SUFFIXES: [
-        '.kelasjagoan.my.id'
+        '.profis.zhost.digital'
     ],
 
     // ── Cloudflare Pages Preview ───────────────────────────

@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checkout via WhatsApp</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
+    <link rel="preload" as="style" href="tailwind.css?v=2026_1">
+    <link rel="stylesheet" href="tailwind.css?v=2026_1">
+    <script src="site.config.js"></script>
+    <script src="config.js?v=2026_1"></script>
+    <script defer src="https://unpkg.com/lucide@0.577.0/dist/umd/lucide.min.js"></script>
+    <style>
+        :root {
+            --brand-1: #0f766e;
+            --brand-2: #0891b2;
+            --ink: #0f172a;
+            --line: rgba(226, 232, 240, 0.98);
+        }
+        html { -webkit-text-size-adjust: 100%; }
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 16px;
+            color: var(--ink);
+            background:
+                radial-gradient(circle at top left, rgba(20, 184, 166, 0.16), transparent 28%),
+                radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 26%),
+                linear-gradient(180deg, #f8fbff 0%, #f3f7fb 52%, #eef4f9 100%);
+        }
+        a, button, input, textarea { min-height: 48px; touch-action: manipulation; }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.94);
+            border: 1px solid var(--line);
+            box-shadow: 0 30px 70px -52px rgba(15, 23, 42, 0.34);
+            backdrop-filter: blur(16px);
+        }
+        .field-label {
+            display: block;
+            margin-bottom: 0.65rem;
+            font-size: 0.74rem;
+            font-weight: 800;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: #475569;
+        }
+        .field {
+            width: 100%;
+            border: 1.5px solid #d9e3ec;
+            border-radius: 1rem;
+            background: #fff;
+            padding: 0.95rem 1rem;
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: var(--ink);
+            transition: border-color 0.18s ease, box-shadow 0.18s ease;
+        }
+        .field::placeholder {
+            color: #94a3b8;
+            font-weight: 500;
+        }
+        .field:focus {
+            outline: none;
+            border-color: rgba(15, 118, 110, 0.82);
+            box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.12);
+        }
+        .field.invalid {
+            border-color: rgba(220, 38, 38, 0.7);
+            box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.08);
+        }
+        .helper-text {
+            margin-top: 0.55rem;
+            font-size: 0.78rem;
+            line-height: 1.55;
+            color: #64748b;
+        }
+        .error-text {
+            margin-top: 0.55rem;
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: #dc2626;
+        }
+        .stepper {
+            display: grid;
+            grid-template-columns: 52px 1fr 52px;
+            align-items: stretch;
+            border: 1.5px solid #d9e3ec;
+            border-radius: 1rem;
+            background: #fff;
+            overflow: hidden;
+        }
+        .stepper button {
+            border: 0;
+            background: linear-gradient(180deg, #f8fafc 0%, #eef4f8 100%);
+            font-size: 1.1rem;
+            font-weight: 800;
+            color: #0f766e;
+        }
+        .stepper button:hover {
+            background: #ecfeff;
+        }
+        .stepper input {
+            border: 0;
+            border-left: 1px solid #d9e3ec;
+            border-right: 1px solid #d9e3ec;
+            text-align: center;
+            font-size: 1rem;
+            font-weight: 800;
+            color: var(--ink);
+        }
+        .stepper input:focus { outline: none; }
+        .cta-button {
+            width: 100%;
+            border: 0;
+            border-radius: 1.35rem;
+            background: linear-gradient(135deg, var(--brand-1), var(--brand-2));
+            color: #fff;
+            box-shadow: 0 18px 42px -20px rgba(15, 118, 110, 0.74);
+            transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+        }
+        .cta-button:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 20px 46px -22px rgba(15, 118, 110, 0.8);
+        }
+        .cta-button:disabled {
+            cursor: not-allowed;
+            opacity: 0.68;
+            transform: none;
+            box-shadow: none;
+        }
+        .secondary-button {
+            border: 1px solid #cbd5e1;
+            border-radius: 1rem;
+            background: #fff;
+            color: #0f172a;
+        }
+        .secondary-button:hover {
+            border-color: #94a3b8;
+            background: #f8fafc;
+        }
+        .summary-shell {
+            background:
+                radial-gradient(circle at top left, rgba(52, 211, 153, 0.2), transparent 34%),
+                radial-gradient(circle at bottom right, rgba(34, 197, 94, 0.12), transparent 30%),
+                linear-gradient(180deg, #0f172a 0%, #111827 100%);
+            color: #fff;
+        }
+        .summary-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1rem;
+            font-size: 0.92rem;
+        }
+        .summary-row span:first-child {
+            color: rgba(226, 232, 240, 0.78);
+        }
+        .info-card {
+            border: 1px solid rgba(226, 232, 240, 0.98);
+            border-radius: 1.4rem;
+            background: rgba(255, 255, 255, 0.92);
+            padding: 1.1rem;
+        }
+        .soft-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            border-radius: 999px;
+            padding: 0.45rem 0.8rem;
+            font-size: 0.7rem;
+            font-weight: 800;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+        }
+        .pulse-dot {
+            width: 0.5rem;
+            height: 0.5rem;
+            border-radius: 999px;
+            background: currentColor;
+            animation: pulseDot 1.4s ease-in-out infinite;
+        }
+        @keyframes pulseDot {
+            0%, 100% { opacity: 0.35; transform: scale(0.9); }
+            50% { opacity: 1; transform: scale(1); }
+        }
+    </style>
+</head>
+<body class="min-h-screen">
+    <div id="toast-root" class="fixed right-4 top-4 z-50 space-y-3"></div>
+
+    <main class="px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+        <div class="mx-auto max-w-6xl">
+            <header class="mb-6 flex items-center justify-between gap-4">
+                <a href="index.html" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-bold uppercase tracking-[0.15em] text-slate-600 shadow-sm">
+                    <i data-lucide="arrow-left" class="h-4 w-4"></i>
+                    Kembali
+                </a>
+                <div class="rounded-full bg-white px-4 py-2 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 shadow-sm">
+                    Simple Checkout via WhatsApp
+                </div>
+            </header>
+
+            <div class="grid gap-6 lg:grid-cols-[0.95fr,1.05fr] lg:items-start">
+                <aside class="order-1 space-y-6 lg:sticky lg:top-6">
+                    <section class="summary-shell rounded-[2rem] p-6 shadow-2xl shadow-slate-300/20 sm:p-7">
+                        <div class="flex items-start justify-between gap-4">
+                            <div>
+                                <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-300">Ringkasan Pesanan</p>
+                                <h1 class="mt-3 text-2xl font-extrabold tracking-tight sm:text-3xl">Checkout cepat, lanjut ke WhatsApp</h1>
+                            </div>
+                            <div id="summary-avatar" class="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 text-lg font-black text-white">P</div>
+                        </div>
+
+                        <div class="mt-5 flex flex-wrap items-center gap-3">
+                            <span id="product-status-pill" class="soft-chip bg-amber-50 text-amber-700">
+                                <span class="pulse-dot"></span>
+                                Memuat produk
+                            </span>
+                            <span class="soft-chip bg-white/10 text-slate-200">
+                                <i data-lucide="message-circle-more" class="h-3.5 w-3.5"></i>
+                                1 klik ke admin
+                            </span>
+                        </div>
+
+                        <div class="mt-6 rounded-[1.6rem] bg-white/8 p-5 ring-1 ring-white/10">
+                            <p id="summary-product-name" class="text-xl font-extrabold tracking-tight">Memuat produk...</p>
+                            <p id="summary-product-desc" class="mt-3 text-sm leading-7 text-slate-200/85">Tunggu sebentar, kami sedang menyiapkan detail produk dan total pesanan Anda.</p>
+                            <div class="mt-5 space-y-3">
+                                <div class="summary-row">
+                                    <span>Jumlah</span>
+                                    <strong id="summary-qty" class="text-right font-bold">1</strong>
+                                </div>
+                                <div class="summary-row">
+                                    <span>Harga Satuan</span>
+                                    <strong id="summary-price" class="text-right font-bold">Rp 0</strong>
+                                </div>
+                                <div class="summary-row">
+                                    <span>Total Produk</span>
+                                    <strong id="summary-total" class="text-right text-lg font-extrabold">Rp 0</strong>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mt-5 rounded-[1.4rem] bg-white/6 p-4">
+                            <p id="summary-note" class="text-sm leading-7 text-slate-200/90">Total di atas adalah subtotal produk. Ongkir, jika ada, akan dikonfirmasi admin di WhatsApp.</p>
+                        </div>
+                    </section>
+
+                    <section class="glass-card rounded-[2rem] p-6 sm:p-7">
+                        <div class="grid gap-4">
+                            <div class="info-card">
+                                <div class="flex items-start gap-3">
+                                    <div class="rounded-2xl bg-emerald-50 p-3 text-emerald-600">
+                                        <i data-lucide="scan-face" class="h-5 w-5"></i>
+                                    </div>
+                                    <div>
+                                        <h2 class="text-sm font-extrabold uppercase tracking-[0.15em] text-slate-700">Yang Dikirim ke WhatsApp</h2>
+                                        <p class="mt-2 text-sm leading-7 text-slate-500">Nama customer, nomor WhatsApp, alamat pengiriman, jumlah pembelian, dan total produk akan otomatis dirapikan ke dalam chat admin.</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="info-card">
+                                <div class="flex items-start gap-3">
+                                    <div class="rounded-2xl bg-cyan-50 p-3 text-cyan-600">
+                                        <i data-lucide="rotate-ccw" class="h-5 w-5"></i>
+                                    </div>
+                                    <div>
+                                        <h2 class="text-sm font-extrabold uppercase tracking-[0.15em] text-slate-700">Autofill Pelanggan Lama</h2>
+                                        <p class="mt-2 text-sm leading-7 text-slate-500">Jika Anda pernah checkout sebelumnya atau sudah login, data penerima akan kami isi otomatis agar proses lebih cepat di device apa pun.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </aside>
+
+                <section class="order-2 glass-card rounded-[2rem] p-6 sm:p-8 lg:p-10">
+                    <div class="mb-8 border-b border-slate-100 pb-6">
+                        <p class="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-emerald-700">
+                            <i data-lucide="package-check" class="h-4 w-4"></i>
+                            Mobile-first checkout
+                        </p>
+                        <h2 class="mt-4 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">Isi data penerima, lalu lanjutkan checkout via WhatsApp</h2>
+                        <p class="mt-3 max-w-2xl text-sm leading-7 text-slate-500">Form ini dibuat sesingkat mungkin. Setelah data lengkap, cukup tekan satu tombol untuk membuka chat WhatsApp dengan detail pesanan yang sudah rapi.</p>
+                    </div>
+
+                    <div id="autofill-banner" class="mb-6 hidden rounded-[1.4rem] border border-emerald-100 bg-emerald-50/80 p-4">
+                        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                                <p class="text-sm font-extrabold text-emerald-800">Data pelanggan terisi otomatis</p>
+                                <p id="autofill-copy" class="mt-1 text-sm leading-6 text-emerald-700">Kami memuat data terakhir Anda agar checkout lebih cepat.</p>
+                            </div>
+                            <button id="clear-autofill-btn" type="button" class="secondary-button inline-flex items-center justify-center gap-2 px-4 py-3 text-xs font-bold uppercase tracking-[0.14em]">
+                                <i data-lucide="eraser" class="h-4 w-4"></i>
+                                Hapus data
+                            </button>
+                        </div>
+                    </div>
+
+                    <form id="checkout-form" class="space-y-6" novalidate>
+                        <input type="hidden" id="prod-id">
+                        <input type="hidden" id="prod-title">
+                        <input type="hidden" id="prod-price">
+                        <input type="hidden" id="prod-desc">
+
+                        <div class="grid gap-6">
+                            <section class="rounded-[1.6rem] border border-slate-200 bg-slate-50/80 p-5">
+                                <div class="mb-5 flex items-center justify-between gap-4">
+                                    <div>
+                                        <p class="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500">Data Customer</p>
+                                        <h3 class="mt-2 text-lg font-extrabold text-slate-900">Informasi penerima</h3>
+                                    </div>
+                                    <span class="rounded-full bg-white px-3 py-1 text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500 shadow-sm">Wajib lengkap</span>
+                                </div>
+
+                                <div class="grid gap-5 sm:grid-cols-2">
+                                    <div class="sm:col-span-2">
+                                        <label for="cust-name" class="field-label">Nama Customer</label>
+                                        <input id="cust-name" type="text" autocomplete="name" class="field" placeholder="Nama lengkap penerima">
+                                        <p id="error-name" class="error-text hidden"></p>
+                                    </div>
+
+                                    <div>
+                                        <label for="cust-wa" class="field-label">Nomor WhatsApp</label>
+                                        <input id="cust-wa" type="tel" inputmode="numeric" autocomplete="tel" class="field" placeholder="08xxxxxxxxxx">
+                                        <p class="helper-text">Boleh isi format `08...`, `628...`, atau tanpa angka `0`.</p>
+                                        <p id="error-wa" class="error-text hidden"></p>
+                                    </div>
+
+                                    <div>
+                                        <label for="cust-email" class="field-label">Email Opsional</label>
+                                        <input id="cust-email" type="email" autocomplete="email" class="field" placeholder="email@aktif.com">
+                                        <p class="helper-text">Opsional, dipakai jika Anda ingin admin lebih mudah menghubungi lewat email.</p>
+                                        <p id="error-email" class="error-text hidden"></p>
+                                    </div>
+
+                                    <div class="sm:col-span-2">
+                                        <label for="cust-address" class="field-label">Alamat Pengiriman</label>
+                                        <textarea id="cust-address" rows="4" autocomplete="shipping street-address" class="field min-h-[132px] resize-y" placeholder="Nama jalan, nomor rumah, RT/RW, kelurahan, kecamatan, kota/kabupaten, provinsi, kode pos"></textarea>
+                                        <p class="helper-text">Tuliskan alamat selengkap mungkin agar admin bisa langsung lanjut ke proses pengiriman.</p>
+                                        <p id="error-address" class="error-text hidden"></p>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section class="rounded-[1.6rem] border border-slate-200 bg-white p-5">
+                                <div class="mb-5 flex items-center justify-between gap-4">
+                                    <div>
+                                        <p class="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500">Ringkas & Praktis</p>
+                                        <h3 class="mt-2 text-lg font-extrabold text-slate-900">Atur jumlah pembelian</h3>
+                                    </div>
+                                    <span class="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500">Update realtime</span>
+                                </div>
+
+                                <div class="grid gap-5 sm:grid-cols-[0.9fr,1.1fr]">
+                                    <div>
+                                        <label for="order-qty" class="field-label">Jumlah</label>
+                                        <div class="stepper">
+                                            <button type="button" data-qty-adjust="-1" aria-label="Kurangi jumlah">-</button>
+                                            <input id="order-qty" type="number" min="1" step="1" value="1">
+                                            <button type="button" data-qty-adjust="1" aria-label="Tambah jumlah">+</button>
+                                        </div>
+                                        <p id="error-qty" class="error-text hidden"></p>
+                                    </div>
+
+                                    <div class="rounded-[1.3rem] border border-slate-200 bg-slate-50 p-4">
+                                        <p class="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500">Detail Pesanan</p>
+                                        <p id="order-detail-line" class="mt-2 text-sm font-bold leading-6 text-slate-900">Produk: -</p>
+                                        <p id="order-qty-line" class="mt-1 text-sm text-slate-500">Jumlah: 1</p>
+                                        <p class="mt-3 text-xs leading-6 text-slate-500">Subtotal produk dihitung otomatis sebelum Anda diarahkan ke WhatsApp.</p>
+                                    </div>
+                                </div>
+                            </section>
+                        </div>
+
+                        <div class="rounded-[1.6rem] border border-cyan-100 bg-gradient-to-br from-cyan-50 to-emerald-50 p-5">
+                            <div class="flex items-start gap-3">
+                                <div class="rounded-2xl bg-white p-3 text-cyan-600 shadow-sm">
+                                    <i data-lucide="sparkles" class="h-5 w-5"></i>
+                                </div>
+                                <div>
+                                    <p class="text-[11px] font-bold uppercase tracking-[0.15em] text-cyan-700">Satu Langkah Lagi</p>
+                                    <p class="mt-2 text-sm leading-7 text-slate-600">Begitu tombol di bawah ditekan, sistem akan menyiapkan ringkasan order lalu mengarahkan Anda langsung ke WhatsApp admin.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button id="submit-btn" type="submit" class="cta-button flex w-full items-center justify-center gap-3 px-6 py-4 text-sm font-extrabold uppercase tracking-[0.16em]" disabled>
+                            <i data-lucide="message-circle-more" class="h-5 w-5"></i>
+                            <span id="submit-btn-label">Checkout via WhatsApp</span>
+                        </button>
+                        <p id="submit-helper" class="text-center text-sm leading-6 text-slate-500">Produk sedang disiapkan sebelum checkout bisa digunakan.</p>
+                    </form>
+
+                    <div id="redirect-card" class="mt-6 hidden rounded-[1.6rem] border border-emerald-100 bg-emerald-50/80 p-5">
+                        <div class="flex items-start gap-3">
+                            <div class="rounded-2xl bg-white p-3 text-emerald-600 shadow-sm">
+                                <i data-lucide="rocket" class="h-5 w-5"></i>
+                            </div>
+                            <div class="flex-1">
+                                <p class="text-sm font-extrabold text-emerald-800">WhatsApp siap dibuka</p>
+                                <p id="redirect-status-text" class="mt-2 text-sm leading-7 text-emerald-700">Jika WhatsApp tidak terbuka otomatis, gunakan tombol di bawah ini.</p>
+                                <p id="redirect-order-ref" class="mt-2 text-xs font-bold uppercase tracking-[0.15em] text-emerald-700"></p>
+                            </div>
+                        </div>
+                        <div class="mt-4 grid gap-3 sm:grid-cols-2">
+                            <a id="redirect-link" href="#" target="_blank" rel="noopener noreferrer" class="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-5 py-3 text-xs font-bold uppercase tracking-[0.16em] text-white shadow-sm shadow-emerald-200">
+                                <i data-lucide="message-circle" class="h-4 w-4"></i>
+                                Buka WhatsApp
+                            </a>
+                            <button id="copy-message-btn" type="button" class="secondary-button inline-flex items-center justify-center gap-2 px-5 py-3 text-xs font-bold uppercase tracking-[0.16em]">
+                                <i data-lucide="copy" class="h-4 w-4"></i>
+                                Salin Pesan
+                            </button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        (function() {
+            const cacheKey = 'cepat_global_settings';
+            const cacheAge = 60 * 60 * 1000;
+
+            function applySettings(data) {
+                if (!data) return;
+                document.title = 'Checkout via WhatsApp | ' + String(data.site_name || 'Checkout');
+            }
+
+            let cached = null;
+            try { cached = JSON.parse(localStorage.getItem(cacheKey) || 'null'); } catch (e) { cached = null; }
+            if (cached && cached.data) applySettings(cached.data);
+
+            window.__CEPAT_GLOBAL_SETTINGS__ = {
+                cached: cached,
+                isFresh: !!(cached && cached.time && (Date.now() - cached.time <= cacheAge)),
+                sync: function(data, time) {
+                    try { localStorage.setItem(cacheKey, JSON.stringify({ data: data, time: Number(time || Date.now()) })); } catch (e) {}
+                    applySettings(data);
+                }
+            };
+        })();
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const productId = urlParams.get('id');
+        const affRef = urlParams.get('ref') || urlParams.get('aff_id') || '';
+        const productCacheKey = productId ? ('cepat_product_' + productId) : '';
+        const productCacheAge = 5 * 60 * 1000;
+        const RETURNING_PROFILE_KEY = 'cepat_checkout_customer_profile_v2';
+        const RETURNING_PROFILE_MAX_AGE = 90 * 24 * 60 * 60 * 1000;
+        const LAST_ORDER_KEY = 'cepat_last_physical_order';
+
+        const state = {
+            settings: {},
+            product: null,
+            payment: {},
+            redirectUrl: '',
+            whatsappMessage: '',
+            loading: false
+        };
+
+        function refreshIcons(root) {
+            if (window.lucide && typeof window.lucide.createIcons === 'function') {
+                if (root) window.lucide.createIcons({ root: root });
+                else window.lucide.createIcons();
+            }
+        }
+
+        function parseJsonSafe(raw) {
+            try { return JSON.parse(raw || 'null'); } catch (e) { return null; }
+        }
+
+        function formatCurrency(value) {
+            return 'Rp ' + Number(value || 0).toLocaleString('id-ID');
+        }
+
+        function showToast(message, type) {
+            const root = document.getElementById('toast-root');
+            const tones = {
+                success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+                warning: 'border-amber-200 bg-amber-50 text-amber-700',
+                error: 'border-red-200 bg-red-50 text-red-700'
+            };
+            const toast = document.createElement('div');
+            toast.className = 'rounded-2xl border px-4 py-3 text-sm font-semibold shadow-lg ' + (tones[type] || tones.success);
+            toast.textContent = message;
+            root.appendChild(toast);
+            setTimeout(() => toast.remove(), 3200);
+        }
+
+        function getApiUrl() {
+            return window.API_URL || window.SCRIPT_URL || (typeof SCRIPT_URL !== 'undefined' ? SCRIPT_URL : '');
+        }
+
+        function digitsOnly(value) {
+            return String(value || '').replace(/[^0-9]/g, '');
+        }
+
+        function normalizePhone(value) {
+            let num = digitsOnly(value);
+            if (num.startsWith('620')) num = num.substring(3);
+            else if (num.startsWith('62')) num = num.substring(2);
+            if (num.startsWith('0')) num = num.substring(1);
+            return num;
+        }
+
+        function getQty() {
+            const field = document.getElementById('order-qty');
+            const value = Math.max(1, parseInt(field.value || '1', 10) || 1);
+            if (String(value) !== String(field.value || '')) field.value = String(value);
+            return value;
+        }
+
+        function getPrice() {
+            return Number(document.getElementById('prod-price').value || 0);
+        }
+
+        function buildOrderDetail() {
+            return 'Produk: ' + (document.getElementById('prod-title').value || 'Produk')
+                + ' | Jumlah: ' + getQty()
+                + ' | Harga: ' + formatCurrency(getPrice());
+        }
+
+        function setProductStatus(label, tone) {
+            const el = document.getElementById('product-status-pill');
+            const tones = {
+                loading: 'soft-chip bg-amber-50 text-amber-700',
+                ready: 'soft-chip bg-emerald-50 text-emerald-700',
+                error: 'soft-chip bg-red-50 text-red-700'
+            };
+            el.className = tones[tone] || tones.loading;
+            el.innerHTML = '<span class="pulse-dot"></span>' + label;
+        }
+
+        function syncSummary() {
+            const title = document.getElementById('prod-title').value || 'Produk pilihan';
+            const desc = document.getElementById('prod-desc').value || 'Detail produk akan langsung diteruskan ke admin melalui WhatsApp.';
+            const qty = getQty();
+            const price = getPrice();
+            const total = qty * price;
+            const initial = String(title || 'P').trim().charAt(0).toUpperCase() || 'P';
+
+            document.getElementById('summary-avatar').textContent = initial;
+            document.getElementById('summary-product-name').textContent = title;
+            document.getElementById('summary-product-desc').textContent = desc;
+            document.getElementById('order-detail-line').textContent = 'Produk: ' + title;
+            document.getElementById('order-qty-line').textContent = 'Jumlah: ' + qty + ' - Total: ' + formatCurrency(total);
+            document.getElementById('summary-qty').textContent = String(qty);
+            document.getElementById('summary-price').textContent = formatCurrency(price);
+            document.getElementById('summary-total').textContent = formatCurrency(total);
+            document.getElementById('submit-btn').disabled = state.loading || !(state.product && title && price > 0);
+            document.getElementById('submit-helper').textContent = state.product && title && price > 0
+                ? 'Sekali klik akan menyimpan ringkasan pesanan dan membuka chat WhatsApp admin.'
+                : 'Produk sedang disiapkan sebelum checkout bisa digunakan.';
+        }
+
+        function setFieldError(fieldId, message) {
+            const field = document.getElementById(fieldId);
+            const errorId = fieldId === 'cust-address' ? 'error-address' : 'error-' + fieldId.split('-')[1];
+            const error = document.getElementById(errorId);
+            if (!field || !error) return;
+            field.classList.toggle('invalid', !!message);
+            error.textContent = message || '';
+            error.classList.toggle('hidden', !message);
+        }
+
+        function validateForm(options) {
+            const opts = options || {};
+            let valid = true;
+            let firstInvalid = null;
+            const name = document.getElementById('cust-name').value.trim();
+            const wa = normalizePhone(document.getElementById('cust-wa').value.trim());
+            const email = document.getElementById('cust-email').value.trim();
+            const address = document.getElementById('cust-address').value.trim();
+            const qty = getQty();
+
+            const nameError = name.length >= 3 ? '' : 'Nama customer minimal 3 karakter.';
+            const waError = wa.length >= 9 ? '' : 'Nomor WhatsApp minimal 9 digit.';
+            const emailError = !email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? '' : 'Format email belum valid.';
+            const addressError = address.length >= 10 ? '' : 'Alamat pengiriman perlu diisi lebih lengkap.';
+
+            setFieldError('cust-name', nameError);
+            setFieldError('cust-wa', waError);
+            setFieldError('cust-email', emailError);
+            setFieldError('cust-address', addressError);
+
+            [['cust-name', nameError], ['cust-wa', waError], ['cust-email', emailError], ['cust-address', addressError]].forEach(function(entry) {
+                if (!entry[1]) return;
+                valid = false;
+                firstInvalid = firstInvalid || document.getElementById(entry[0]);
+            });
+
+            const qtyError = document.getElementById('error-qty');
+            const qtyField = document.getElementById('order-qty');
+            if (!Number.isFinite(qty) || qty < 1) {
+                qtyField.classList.add('invalid');
+                qtyError.textContent = 'Jumlah minimal 1.';
+                qtyError.classList.remove('hidden');
+                valid = false;
+                firstInvalid = firstInvalid || qtyField;
+            } else {
+                qtyField.classList.remove('invalid');
+                qtyError.textContent = '';
+                qtyError.classList.add('hidden');
+            }
+
+            if (!valid && opts.focusFirst && firstInvalid && typeof firstInvalid.focus === 'function') {
+                firstInvalid.focus();
+            }
+            return valid;
+        }
+
+        function renderProduct(payload) {
+            const product = payload.data || {};
+            state.product = product;
+            state.payment = payload.payment || {};
+            document.getElementById('prod-id').value = product.id || productId || '';
+            document.getElementById('prod-title').value = product.title || '';
+            document.getElementById('prod-price').value = Number(product.harga || 0);
+            document.getElementById('prod-desc').value = product.desc || 'Produk akan dikirim setelah admin mengonfirmasi detail pesanan Anda di WhatsApp.';
+            setProductStatus(product.title ? 'Produk siap di-checkout' : 'Produk belum tersedia', product.title ? 'ready' : 'error');
+            syncSummary();
+        }
+
+        async function loadGlobalSettings() {
+            const globalCache = window.__CEPAT_GLOBAL_SETTINGS__ || {};
+            if (globalCache.cached && globalCache.cached.data) {
+                state.settings = globalCache.cached.data || {};
+                document.title = 'Checkout via WhatsApp | ' + String((state.settings && state.settings.site_name) || 'Kelas Jagoan');
+            }
+            if (globalCache.isFresh) return;
+            const endpoint = getApiUrl();
+            if (!endpoint) return;
+            try {
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify({ action: 'get_global_settings' })
+                });
+                const json = await res.json();
+                if (json.status === 'success') {
+                    state.settings = json.data || {};
+                    document.title = 'Checkout via WhatsApp | ' + String((state.settings && state.settings.site_name) || 'Kelas Jagoan');
+                    if (typeof globalCache.sync === 'function') globalCache.sync(json.data, Date.now());
+                }
+            } catch (e) {}
+        }
+
+        async function fetchFreshProduct() {
+            const endpoint = getApiUrl();
+            if (!endpoint) throw new Error('API checkout belum tersedia.');
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify({
+                    action: 'get_product',
+                    id: productId,
+                    ref: affRef,
+                    aff_id: affRef
+                })
+            });
+            const json = await res.json();
+            if (json.status !== 'success') throw new Error(json.message || 'Produk tidak ditemukan.');
+            try { localStorage.setItem(productCacheKey, JSON.stringify({ data: json, time: Date.now() })); } catch (e) {}
+            return json;
+        }
+
+        async function loadProduct() {
+            if (!productId) {
+                setProductStatus('Produk tidak ditemukan', 'error');
+                showToast('Produk tidak ditemukan.', 'error');
+                setTimeout(function() { window.location.href = 'index.html'; }, 900);
+                return;
+            }
+
+            const cached = parseJsonSafe(localStorage.getItem(productCacheKey));
+            const hasFreshCache = !!(cached && cached.data && cached.time && (Date.now() - Number(cached.time || 0) <= productCacheAge));
+            if (cached && cached.data) renderProduct(cached.data);
+            else setProductStatus('Memuat detail produk', 'loading');
+
+            if (hasFreshCache) return;
+
+            try {
+                renderProduct(await fetchFreshProduct());
+            } catch (error) {
+                if (!state.product) {
+                    setProductStatus('Gagal memuat produk', 'error');
+                    showToast(error.message || 'Gagal memuat detail produk.', 'error');
+                }
+            }
+        }
+
+        function setLoadingState(isLoading, label) {
+            state.loading = isLoading;
+            const submitBtn = document.getElementById('submit-btn');
+            submitBtn.disabled = isLoading || !(state.product && getPrice() > 0);
+            if (isLoading) {
+                submitBtn.innerHTML = '<i data-lucide="loader-circle" class="h-5 w-5 animate-spin"></i><span id="submit-btn-label">' + (label || 'Menghubungkan ke WhatsApp...') + '</span>';
+                refreshIcons(submitBtn);
+                return;
+            }
+            submitBtn.innerHTML = '<i data-lucide="message-circle-more" class="h-5 w-5"></i><span id="submit-btn-label">Checkout via WhatsApp</span>';
+            refreshIcons(submitBtn);
+            syncSummary();
+        }
+
+        function saveReturningProfile(data) {
+            try {
+                localStorage.setItem(RETURNING_PROFILE_KEY, JSON.stringify({
+                    nama: data.nama || '',
+                    whatsapp: normalizePhone(data.whatsapp || ''),
+                    email: data.email || '',
+                    alamat: data.alamat || '',
+                    updated_at: Date.now()
+                }));
+            } catch (e) {}
+        }
+
+        function fillIfEmpty(fieldId, value) {
+            const field = document.getElementById(fieldId);
+            if (!field || field.value || !value) return false;
+            field.value = String(value);
+            return true;
+        }
+
+        function showAutofillBanner(message) {
+            document.getElementById('autofill-copy').textContent = message;
+            document.getElementById('autofill-banner').classList.remove('hidden');
+        }
+
+        function hydrateReturningCustomer() {
+            const localProfile = parseJsonSafe(localStorage.getItem(RETURNING_PROFILE_KEY));
+            const sessionProfile = parseJsonSafe(sessionStorage.getItem('user_data'));
+            let applied = false;
+            const sources = [];
+
+            if (localProfile && localProfile.updated_at && (Date.now() - Number(localProfile.updated_at || 0) <= RETURNING_PROFILE_MAX_AGE)) {
+                applied = fillIfEmpty('cust-name', localProfile.nama) || applied;
+                applied = fillIfEmpty('cust-wa', localProfile.whatsapp) || applied;
+                applied = fillIfEmpty('cust-email', localProfile.email) || applied;
+                applied = fillIfEmpty('cust-address', localProfile.alamat) || applied;
+                if (applied) sources.push('riwayat checkout Anda');
+            }
+
+            if (sessionProfile) {
+                applied = fillIfEmpty('cust-name', sessionProfile.nama) || applied;
+                applied = fillIfEmpty('cust-email', sessionProfile.email) || applied;
+                applied = fillIfEmpty('cust-wa', normalizePhone(sessionProfile.whatsapp || '')) || applied;
+                if (applied) sources.push('akun Anda');
+            }
+
+            if (applied) {
+                showAutofillBanner('Kami mengisi otomatis data dari ' + Array.from(new Set(sources)).join(' dan ') + ' agar checkout lebih cepat.');
+            }
+        }
+
+        function buildClientWhatsappMessage(payload) {
+            const lines = [
+                'Halo ' + String((state.settings && state.settings.site_name) || 'Admin') + ',',
+                '',
+                'Saya ingin checkout produk fisik via WhatsApp dengan detail berikut:',
+                '',
+                'Nama Customer: ' + payload.nama,
+                'Nomor WhatsApp: +62' + normalizePhone(payload.whatsapp),
+                'Produk: ' + payload.nama_produk,
+                'Jumlah: ' + payload.jumlah,
+                'Harga Satuan: ' + formatCurrency(payload.harga_satuan),
+                'Total Produk: ' + formatCurrency(payload.total_harga),
+                'Alamat Pengiriman: ' + payload.alamat,
+                'Detail Pesanan: ' + payload.detail_pesanan
+            ];
+            if (payload.email) lines.splice(6, 0, 'Email: ' + payload.email);
+            lines.push('');
+            lines.push('Mohon info konfirmasi stok, ongkir, dan langkah pembayaran berikutnya. Terima kasih.');
+            return lines.join('\n');
+        }
+
+        function buildClientWhatsappUrl(payload) {
+            const waAdmin = normalizePhone((state.payment && state.payment.wa_admin) || (state.settings && state.settings.wa_admin) || '');
+            if (!waAdmin) return '';
+            return 'https://api.whatsapp.com/send?phone=62' + waAdmin + '&text=' + encodeURIComponent(buildClientWhatsappMessage(payload));
+        }
+
+        function collectPayload() {
+            const qty = getQty();
+            const price = getPrice();
+            return {
+                nama: document.getElementById('cust-name').value.trim(),
+                whatsapp: document.getElementById('cust-wa').value.trim(),
+                email: document.getElementById('cust-email').value.trim(),
+                alamat: document.getElementById('cust-address').value.trim(),
+                id_produk: document.getElementById('prod-id').value,
+                nama_produk: document.getElementById('prod-title').value,
+                harga_satuan: price,
+                jumlah: qty,
+                total_harga: qty * price,
+                detail_pesanan: buildOrderDetail(),
+                ref: affRef,
+                aff_id: affRef
+            };
+        }
+
+        function showRedirectCard(url, message, orderRef, statusText) {
+            state.redirectUrl = url || '';
+            state.whatsappMessage = message || '';
+            document.getElementById('redirect-link').href = url || '#';
+            document.getElementById('redirect-status-text').textContent = statusText || 'Jika WhatsApp tidak terbuka otomatis, gunakan tombol di bawah ini.';
+            document.getElementById('redirect-order-ref').textContent = orderRef ? ('Ref Pesanan: ' + orderRef) : '';
+            document.getElementById('redirect-card').classList.remove('hidden');
+            refreshIcons(document.getElementById('redirect-card'));
+        }
+
+        function openWhatsapp(url) {
+            if (!url) return;
+            setTimeout(function() { window.location.assign(url); }, 280);
+        }
+
+        async function copyText(text) {
+            const value = String(text || '');
+            if (!value) return false;
+            if (navigator.clipboard && window.isSecureContext) {
+                await navigator.clipboard.writeText(value);
+                return true;
+            }
+            const probe = document.createElement('textarea');
+            probe.value = value;
+            probe.setAttribute('readonly', 'readonly');
+            probe.style.position = 'fixed';
+            probe.style.opacity = '0';
+            document.body.appendChild(probe);
+            probe.select();
+            document.execCommand('copy');
+            document.body.removeChild(probe);
+            return true;
+        }
+
+        async function submitCheckout(event) {
+            event.preventDefault();
+            if (!validateForm({ focusFirst: true })) {
+                showToast('Lengkapi data checkout terlebih dahulu.', 'warning');
+                return;
+            }
+            if (!state.product || !document.getElementById('prod-title').value || getPrice() <= 0) {
+                showToast('Produk belum siap untuk di-checkout.', 'error');
+                return;
+            }
+
+            const payload = collectPayload();
+            saveReturningProfile(payload);
+            setLoadingState(true, 'Menghubungkan ke WhatsApp...');
+
+            const endpoint = getApiUrl();
+            try {
+                if (!endpoint) throw new Error('API checkout belum tersedia.');
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                    body: JSON.stringify(Object.assign({ action: 'create_order' }, payload))
+                });
+                const json = await res.json();
+                if (json.status !== 'success') throw new Error(json.message || 'Gagal memproses checkout.');
+
+                try { sessionStorage.setItem(LAST_ORDER_KEY, JSON.stringify(json.order || payload)); } catch (e) {}
+
+                const waMessage = json.whatsapp_message || buildClientWhatsappMessage(payload);
+                const redirectUrl = json.redirect_url || buildClientWhatsappUrl(payload);
+                showRedirectCard(redirectUrl, waMessage, json.order_ref || '', 'Pesanan Anda siap diteruskan. Kami sedang membuka WhatsApp admin.');
+                showToast('Mengarahkan Anda ke WhatsApp...', 'success');
+                openWhatsapp(redirectUrl);
+            } catch (error) {
+                const fallbackUrl = buildClientWhatsappUrl(payload);
+                const fallbackMessage = buildClientWhatsappMessage(payload);
+                if (fallbackUrl) {
+                    showRedirectCard(fallbackUrl, fallbackMessage, '', 'Sistem memakai fallback langsung ke WhatsApp. Jika tab baru tidak terbuka, gunakan tombol manual di bawah.');
+                    showToast('Pesanan tetap diarahkan ke WhatsApp lewat fallback browser.', 'warning');
+                    openWhatsapp(fallbackUrl);
+                } else {
+                    showToast(error.message || 'Gagal memproses checkout.', 'error');
+                }
+            } finally {
+                setTimeout(function() { setLoadingState(false); }, 900);
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', async function() {
+            refreshIcons();
+            await loadGlobalSettings();
+            hydrateReturningCustomer();
+            await loadProduct();
+            syncSummary();
+
+            document.getElementById('cust-wa').addEventListener('input', function() {
+                this.value = digitsOnly(this.value);
+            });
+
+            document.querySelectorAll('[data-qty-adjust]').forEach(function(button) {
+                button.addEventListener('click', function() {
+                    const step = Number(button.getAttribute('data-qty-adjust') || 0);
+                    const input = document.getElementById('order-qty');
+                    input.value = String(Math.max(1, (parseInt(input.value || '1', 10) || 1) + step));
+                    syncSummary();
+                    validateForm();
+                });
+            });
+
+            document.getElementById('order-qty').addEventListener('input', function() {
+                syncSummary();
+                validateForm();
+            });
+
+            ['cust-name', 'cust-wa', 'cust-email', 'cust-address'].forEach(function(id) {
+                const field = document.getElementById(id);
+                field.addEventListener('blur', function() { validateForm(); });
+                field.addEventListener('input', function() {
+                    if (field.classList.contains('invalid')) validateForm();
+                });
+            });
+
+            document.getElementById('clear-autofill-btn').addEventListener('click', function() {
+                try { localStorage.removeItem(RETURNING_PROFILE_KEY); } catch (e) {}
+                ['cust-name', 'cust-wa', 'cust-email', 'cust-address'].forEach(function(id) {
+                    document.getElementById(id).value = '';
+                });
+                document.getElementById('autofill-banner').classList.add('hidden');
+                showToast('Data autofill berhasil dibersihkan.', 'success');
+                validateForm();
+            });
+
+            document.getElementById('copy-message-btn').addEventListener('click', async function() {
+                try {
+                    const copied = await copyText(state.whatsappMessage || '');
+                    showToast(copied ? 'Pesan checkout berhasil disalin.' : 'Pesan checkout belum tersedia.', copied ? 'success' : 'warning');
+                } catch (e) {
+                    showToast('Gagal menyalin pesan checkout.', 'error');
+                }
+            });
+
+            document.getElementById('checkout-form').addEventListener('submit', submitCheckout);
+        });
+    </script>
+</body>
+</html>

@@ -1,13 +1,13 @@
 # SEO Maintenance
 
-Dokumen ini menjelaskan konfigurasi SEO pada [index.html](/d:/kelasjagoan3/index.html) agar mudah dirawat setelah branding, copy, atau katalog produk berubah.
+Dokumen ini menjelaskan konfigurasi SEO pada [index.html](/d:/profis3/index.html) agar mudah dirawat setelah branding, copy, atau katalog produk berubah.
 
 ## Ringkasan
 
 - `index.html` sekarang memiliki fallback meta tag statis untuk crawler yang tidak menunggu JavaScript.
 - Generator dinamis `window.CEPAT_SEO` membaca konten hero, tagline, dan katalog produk untuk memperbarui `title`, `description`, Open Graph, Twitter Card, dan canonical URL.
 - Helper debug `window.__SEO_DEBUG__` tersedia di browser console untuk audit cepat setelah halaman dirender.
-- Fallback meta image memakai [assets/seo/og-default.png](/d:/kelasjagoan3/assets/seo/og-default.png) dengan ukuran `1200x630` dan file di bawah `1MB`.
+- Fallback meta image memakai [assets/seo/og-default.png](/d:/profis3/assets/seo/og-default.png) dengan ukuran `1200x630` dan file di bawah `1MB`.
 
 ## Prioritas Sumber Data
 
@@ -18,11 +18,11 @@ Description:
 `[data-seo-description]` -> `site_tagline` -> intro katalog -> ringkasan produk -> `defaultDescription`
 
 Image:
-gambar produk yang lolos validasi OG -> `site_logo` jika memadai -> fallback [assets/seo/og-default.png](/d:/kelasjagoan3/assets/seo/og-default.png)
+gambar produk yang lolos validasi OG -> `site_logo` jika memadai -> fallback [assets/seo/og-default.png](/d:/profis3/assets/seo/og-default.png)
 
 ## Parameter Konfigurasi
 
-Konfigurasi utama ada di objek `SEO_CONFIG` dalam [index.html](/d:/kelasjagoan3/index.html).
+Konfigurasi utama ada di objek `SEO_CONFIG` dalam [index.html](/d:/profis3/index.html).
 
 - `defaultSiteName`: fallback nama brand jika data global belum tersedia.
 - `defaultDescription`: deskripsi aman untuk crawler sebelum data dinamis masuk.

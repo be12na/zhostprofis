@@ -90,7 +90,7 @@ const productFamilies = [
     category: "SEO",
     serviceType: "service",
     prefix: "SEO Booster",
-    audiences: ["Bisnis Lokal", "Blog Niche", "Portal Company", "Produk Fisik", "Landing Produk"],
+    audiences: ["Bisnis Lokal", "Blog Niche", "Portal Company", "Produk Digital", "Landing Affiliate"],
     focus: ["riset keyword", "audit teknis", "optimasi on-page", "schema markup", "tracking ranking"],
     min: 450000,
     max: 3650000
@@ -117,7 +117,7 @@ const productFamilies = [
     category: "Course",
     serviceType: "digital",
     prefix: "Kelas Intensif",
-    audiences: ["Pemula", "Freelancer", "Admin Toko", "Tim Operasional", "Operator Sekolah"],
+    audiences: ["Pemula", "Freelancer", "Admin Toko", "Affiliate", "Operator Sekolah"],
     focus: ["video on demand", "template siap pakai", "worksheet PDF", "group diskusi", "rekaman update"],
     min: 49000,
     max: 499000
@@ -323,6 +323,7 @@ function buildProducts() {
     "pixel_id",
     "pixel_token",
     "pixel_test_code",
+    "commission",
     "category",
     "service_type",
     "created_at",
@@ -343,6 +344,9 @@ function buildProducts() {
     const createdAt = shiftDate(BASE_NOW, -randomInt(10, 380), -randomInt(1, 18));
     const updatedAt = shiftDate(createdAt, randomInt(1, 70), randomInt(0, 14));
     const price = roundCurrency(randomInt(family.min, family.max));
+    const commission = family.serviceType === "consulting"
+      ? roundCurrency(price * (chance(0.3) ? 0 : (chance(0.5) ? 0.1 : 0.15)))
+      : roundCurrency(price * (chance(0.2) ? 0 : (chance(0.5) ? 0.12 : 0.2)));
     const status =
       i % 9 === 0 ? "Inactive" :
       i % 11 === 0 ? "Draft" :
@@ -360,6 +364,7 @@ function buildProducts() {
       chance(0.55) ? `PIX-${pad(100000 + i, 6)}` : "",
       chance(0.4) ? `token_${productSlug}_${pad(i, 2)}` : "",
       chance(0.3) ? `TEST${pad(7000 + i, 5)}` : "",
+      commission,
       family.category,
       family.serviceType,
       formatDateTime(createdAt),
@@ -372,10 +377,10 @@ function buildProducts() {
       title: row[1],
       harga: row[4],
       status: row[5],
-      category: row[11],
-      serviceType: row[12],
-      createdAt: row[13],
-      updatedAt: row[14]
+      category: row[12],
+      serviceType: row[13],
+      createdAt: row[14],
+      updatedAt: row[15]
     });
   }
 
@@ -387,6 +392,8 @@ function buildProducts() {
     "Mencakup audit, implementasi, checklist launch, handover, library template, kontrol perubahan, " +
     "serta rekomendasi optimasi mingguan yang bisa dipakai tim operasional maupun marketing tanpa perlu menebak langkah berikutnya.";
   rows[63][4] = 0;
+  rows[63][11] = 0;
+
   return { headers, rows, records };
 }
 
@@ -444,16 +451,16 @@ function buildPages(products, users) {
   for (let i = 0; i < 15; i += 1) {
     const owner = nonAdminUsers[i];
     const product = activeProducts[(i + 12) % activeProducts.length];
-    const slug = `showcase-${slugify(owner.name).slice(0, 28)}-${pad(i + 1, 2)}`;
+    const slug = `affiliate-${slugify(owner.name).slice(0, 28)}-${pad(i + 1, 2)}`;
     const createdAt = shiftDate(BASE_NOW, -randomInt(5, 120), -randomInt(1, 18));
     const updatedAt = shiftDate(createdAt, randomInt(0, 40), randomInt(0, 12));
     const row = [
       `PG-${pad(i + 41, 4)}`,
       slug,
-      `Halaman Showcase ${owner.name} - ${product.category}`,
+      `LP Affiliate ${owner.name} - ${product.category}`,
       makeHtmlContent(
         `Promo ${product.title}`,
-        `Template halaman milik ${owner.name} untuk kebutuhan follow up pelanggan dan presentasi penawaran.`,
+        `Template halaman milik ${owner.name} untuk kebutuhan affiliate dan follow up lead.`,
         "Lihat Penawaran",
         owner.city
       ),
@@ -566,7 +573,7 @@ function buildSettings() {
   const updatedAt = formatDateTime(shiftDate(BASE_NOW, -2, 0));
   const rows = [
     ["site_name", "ZHOST Demo Commerce", createdAt, updatedAt],
-    ["site_tagline", "Demo aplikasi penjualan produk dan layanan dengan checkout sederhana", createdAt, updatedAt],
+    ["site_tagline", "Demo aplikasi penjualan produk, jasa, dan affiliate tools", createdAt, updatedAt],
     ["site_logo", "https://cdn.demo.zhost.app/assets/logo-demo.png", createdAt, updatedAt],
     ["site_favicon", "https://cdn.demo.zhost.app/assets/favicon-demo.png", createdAt, updatedAt],
     ["site_url", "https://demo.zhost.app", createdAt, updatedAt],
@@ -577,13 +584,16 @@ function buildSettings() {
     ["contact_email", "hello@demo.zhost.app", createdAt, updatedAt],
     ["support_email", "support@demo.zhost.app", createdAt, updatedAt],
     ["support_hours", "Senin-Sabtu 08:00-20:00 WIB", createdAt, updatedAt],
+    ["fonnte_token", "", createdAt, updatedAt],
+    ["moota_gas_url", "https://demo.zhost.app/webhook/moota", createdAt, updatedAt],
+    ["moota_token", "", createdAt, updatedAt],
     ["ik_public_key", "public_demo_zhost_key", createdAt, updatedAt],
     ["ik_endpoint", "https://ik.imagekit.io/demo-zhost", createdAt, updatedAt],
     ["cf_zone_id", "", createdAt, updatedAt],
     ["cf_api_token", "", createdAt, updatedAt],
     ["hero_title", "Skala penjualan digital dan layanan Anda lebih rapi", createdAt, updatedAt],
     ["hero_subtitle", "Semua katalog, checkout, order tracking, dan halaman promo sudah siap untuk demo.", createdAt, updatedAt],
-    ["seo_keywords", "hosting,vps,website,seo,automation,checkout", createdAt, updatedAt],
+    ["seo_keywords", "hosting,vps,website,seo,automation,affiliate", createdAt, updatedAt],
     ["maintenance_mode", "false", createdAt, updatedAt],
     ["timezone", "Asia/Jakarta", createdAt, updatedAt]
   ];

@@ -105,6 +105,187 @@
             probe.src = safeUrl;
         }
 
+        function normalizeMootaInput(value) {
+            return String(value || '').trim();
+        }
+
+        function normalizeMootaUrl(value) {
+            const raw = normalizeMootaInput(value);
+            if (!raw) return '';
+            try {
+                const parsed = new URL(raw);
+                parsed.search = '';
+                parsed.hash = '';
+                return parsed.toString().replace(/\?$/, '');
+            } catch (e) {
+                return raw;
+            }
+        }
+
+        function isValidMootaUrl(value) {
+            const url = normalizeMootaUrl(value);
+            if (!url) return false;
+            try {
+                const parsed = new URL(url);
+                return parsed.protocol === 'https:' && !parsed.search && !parsed.hash;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function isDirectAppsScriptUrl(value) {
+            const url = normalizeMootaUrl(value);
+            if (!url) return false;
+            try {
+                const parsed = new URL(url);
+                const host = String(parsed.hostname || '').toLowerCase();
+                return host === 'script.google.com' || host === 'script.googleusercontent.com';
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function isValidMootaToken(value) {
+            return /^[A-Za-z0-9]{8,200}$/.test(normalizeMootaInput(value));
+        }
+
+        function setMootaStatus(message, type = 'info') {
+            const box = document.getElementById('moota-test-status');
+            if (!box) return;
+            box.classList.remove('hidden', 'bg-red-50', 'border-red-200', 'text-red-700', 'bg-sky-50', 'border-sky-200', 'text-sky-700', 'bg-emerald-50', 'border-emerald-200', 'text-emerald-700', 'bg-amber-50', 'border-amber-200', 'text-amber-700', 'bg-slate-50', 'border-slate-200', 'text-slate-600');
+            if (type === 'error') {
+                box.classList.add('bg-red-50', 'border-red-200', 'text-red-700');
+            } else if (type === 'success') {
+                box.classList.add('bg-emerald-50', 'border-emerald-200', 'text-emerald-700');
+            } else if (type === 'warning') {
+                box.classList.add('bg-amber-50', 'border-amber-200', 'text-amber-700');
+            } else if (type === 'brand') {
+                box.classList.add('bg-sky-50', 'border-sky-200', 'text-sky-700');
+            } else {
+                box.classList.add('bg-slate-50', 'border-slate-200', 'text-slate-600');
+            }
+            box.textContent = message;
+        }
+
+        function toggleSensitiveField(fieldId, buttonEl) {
+            const input = document.getElementById(fieldId);
+            if (!input) return;
+            input.type = input.type === 'password' ? 'text' : 'password';
+            if (buttonEl) {
+                buttonEl.textContent = input.type === 'password' ? 'Show' : 'Hide';
+            }
+        }
+
+        function updateMootaHints(tokenConfigured) {
+            MOOTA_TOKEN_CONFIGURED = !!tokenConfigured;
+
+            const tokenHint = document.getElementById('moota-token-hint');
+            const tokenInput = document.getElementById('set-moota-token');
+
+            if (tokenHint && tokenInput) {
+                if (MOOTA_TOKEN_CONFIGURED) {
+                    tokenHint.textContent = 'Secret Token sudah tersimpan di server. Isi field ini hanya jika ingin mengganti token.';
+                    tokenInput.placeholder = 'Secret Token sudah tersimpan. Isi hanya jika ingin mengganti.';
+                } else {
+                    tokenHint.textContent = 'Secret Token wajib diisi untuk memverifikasi signature HMAC webhook Moota.';
+                    tokenInput.placeholder = 'Secret123';
+                }
+            }
+        }
+
+        function getMootaFormConfig() {
+            return {
+                gasUrl: normalizeMootaUrl(document.getElementById('set-moota-url').value),
+                token: normalizeMootaInput(document.getElementById('set-moota-token').value),
+                hasStoredToken: !!MOOTA_TOKEN_CONFIGURED
+            };
+        }
+
+        function validateMootaFormConfig(config) {
+            const cfg = config || getMootaFormConfig();
+            const hasAnyValue = !!(cfg.gasUrl || cfg.token || cfg.hasStoredToken);
+            const errors = [];
+            if (!hasAnyValue) return { hasAnyValue: false, errors };
+
+            if (!cfg.gasUrl) errors.push('Link webhook Moota wajib diisi.');
+            else if (!isValidMootaUrl(cfg.gasUrl)) errors.push('Format link webhook Moota tidak valid. Gunakan HTTPS tanpa query string.');
+            else if (isDirectAppsScriptUrl(cfg.gasUrl)) errors.push('Link webhook Moota tidak boleh langsung ke Google Apps Script. Gunakan endpoint Cloudflare Worker atau proxy publik agar header Signature bisa diteruskan.');
+
+            if (!cfg.token && !cfg.hasStoredToken) errors.push('Secret Token Moota wajib diisi.');
+            if (cfg.token && !isValidMootaToken(cfg.token)) errors.push('Format Secret Token Moota tidak valid. Gunakan minimal 8 karakter alphanumeric tanpa spasi.');
+
+            return { hasAnyValue: true, errors };
+        }
+
+        async function testMootaConnection(options = {}) {
+            const opts = options || {};
+            try {
+                if (guardDemoAdminAction('test koneksi Moota')) return null;
+                const cfg = getMootaFormConfig();
+                const validation = validateMootaFormConfig(cfg);
+
+                if (!validation.hasAnyValue) {
+                    const msg = 'Konfigurasi Moota masih kosong. Isi link webhook dan Secret Token terlebih dahulu.';
+                    setMootaStatus(msg, 'warning');
+                    if (!opts.silent) showToast(msg, 'warning');
+                    return null;
+                }
+
+                if (validation.errors.length) {
+                    throw new Error(validation.errors[0]);
+                }
+
+                const endpoint = getApiEndpoint();
+                if (!endpoint) throw new Error('API endpoint tidak tersedia.');
+
+                setMootaStatus('Menguji webhook Moota...', 'brand');
+                const payload = buildAdminAuthPayload({
+                    action: 'test_moota_config',
+                    moota_gas_url: cfg.gasUrl
+                });
+                if (cfg.token) payload.moota_token = cfg.token;
+
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const rawText = await res.text();
+                let data = {};
+                try {
+                    data = rawText ? JSON.parse(rawText) : {};
+                } catch (parseError) {
+                    throw new Error('Respons test Moota tidak valid dari server.');
+                }
+
+                if (!res.ok) {
+                    throw new Error(data.message || ('Permintaan test Moota gagal (HTTP ' + res.status + ').'));
+                }
+                if (data.status !== 'success') {
+                    throw new Error(String(data.message || 'Koneksi Moota gagal.'));
+                }
+
+                const saveReminder = cfg.token ? ' Klik "Update API Sistem" untuk menyimpan Secret Token ini ke server.' : '';
+                const msg = String(data.message || 'Koneksi webhook Moota berhasil.') + saveReminder;
+                setMootaStatus(msg, 'success');
+                if (!opts.silent) {
+                    showToast(
+                        cfg.token
+                            ? 'Koneksi Moota berhasil diuji. Simpan pengaturan untuk menyimpan Secret Token.'
+                            : 'Koneksi Moota berhasil diuji.',
+                        'success'
+                    );
+                }
+                return data;
+            } catch (error) {
+                const msg = error && error.message ? error.message : 'Koneksi Moota gagal.';
+                setMootaStatus(msg, 'error');
+                if (opts.silent) throw new Error(msg);
+                showToast(msg, 'error');
+                return null;
+            }
+        }
+
         function normalizeImageKitInput(value) {
             return String(value || '').trim();
         }
@@ -404,7 +585,7 @@
 
         <div class="w-full max-w-md bg-white/80 backdrop-blur-xl rounded-[2rem] shadow-2xl border border-white/50 p-8 md:p-12 relative z-10 fade-in-up">
             <div class="text-center mb-10">
-                <img id="login-logo-img" class="w-24 h-24 object-contain mx-auto mb-6 hidden transition-all duration-500 hover:scale-110" src="data:," alt="Logo">
+                <img id="login-logo-img" class="w-24 h-24 object-contain mx-auto mb-6 hidden transition-all duration-500 hover:scale-110" src="" alt="Logo">
                 <div id="login-logo-icon" class="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-indigo-200 transition-all duration-500 hover:rotate-12 hover:scale-110">
                     <i data-lucide="shield-check" class="w-8 h-8 text-white"></i>
                 </div>
@@ -467,7 +648,7 @@
         <aside id="sidebar" class="w-72 bg-white border-r border-slate-200 flex flex-col h-full flex-shrink-0 z-50 transition-transform duration-500 ease-in-out">
             <div class="h-24 flex items-center px-8 border-b border-slate-100 bg-slate-50/50 backdrop-blur-sm">
                 <div class="flex items-center gap-4 w-full">
-                    <img id="sidebar-logo-img" class="h-10 w-auto object-contain hidden transition-all duration-300 hover:scale-105" src="data:," alt="Logo">
+                    <img id="sidebar-logo-img" class="h-10 w-auto object-contain hidden transition-all duration-300 hover:scale-105" src="" alt="Logo">
                     <div id="sidebar-logo-icon" class="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-200 transition-transform hover:rotate-12">
                         <i data-lucide="command" class="w-6 h-6"></i>
                     </div>
@@ -858,6 +1039,10 @@
                                     <input type="email" id="set-email" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition-all font-mono text-xs">
                                 </div>
                                 <div>
+                                    <label class="text-xs font-bold text-emerald-600 uppercase tracking-wider ml-1 mb-2 block">Fonnte Token (WA)</label>
+                                    <input type="text" id="set-fonnte" class="w-full p-4 bg-emerald-50 border border-emerald-100 rounded-xl outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/10 transition-all font-mono text-xs text-emerald-800">
+                                </div>
+                                <div>
                                     <label class="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1 mb-2 block">WA Admin (08xxx)</label>
                                     <input type="text" id="set-wa" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition-all font-mono text-sm">
                                 </div>
@@ -874,6 +1059,47 @@
                                         <label class="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1 mb-2 block">Atas Nama</label>
                                         <input type="text" id="set-bank-owner" placeholder="Nama pemilik rekening" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition-all text-sm">
                                     </div>
+                                </div>
+                                <div class="rounded-[1.5rem] border border-sky-100 bg-sky-50/60 p-5 space-y-4">
+                                    <div class="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+                                        <div class="max-w-2xl">
+                                            <label class="text-xs font-bold text-sky-700 uppercase tracking-wider ml-1 mb-1 block">Moota Payment Gateway (Opsional)</label>
+                                            <p class="text-xs text-slate-500">Checkout produk fisik default memakai konfirmasi manual via WhatsApp. Bagian ini dibiarkan opsional hanya untuk kebutuhan integrasi lama.</p>
+                                        </div>
+                                        <div class="w-full xl:w-auto">
+                                            <button type="button" onclick="testMootaConnection()" class="w-full bg-sky-600 text-white px-4 py-3 rounded-xl font-bold text-xs uppercase hover:bg-sky-700 transition-all shadow-lg shadow-sky-200">
+                                                Test Koneksi Moota
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1 mb-2 flex items-center gap-2">
+                                                <span>Webhook URL</span>
+                                                <i data-lucide="circle-help" class="w-3.5 h-3.5 text-slate-400" title="URL webhook publik yang dipasang di dashboard Moota. Wajib HTTPS dan tanpa query string."></i>
+                                            </label>
+                                            <input type="text" id="set-moota-url" placeholder="https://domainanda.com/webhook/moota" class="w-full p-4 bg-white border border-sky-100 rounded-xl outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 transition-all font-mono text-xs">
+                                            <p class="text-[11px] text-slate-500 mt-2">Gunakan URL webhook publik dari Cloudflare Worker atau proxy Anda. Jangan gunakan URL Google Apps Script langsung.</p>
+                                        </div>
+                                        <div>
+                                            <label class="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1 mb-2 flex items-center gap-2">
+                                                <span>Secret Token</span>
+                                                <i data-lucide="shield-check" class="w-3.5 h-3.5 text-slate-400" title="Token minimal 8 karakter alphanumeric yang dipakai untuk menghitung signature HMAC SHA-256 dari payload webhook Moota."></i>
+                                            </label>
+                                            <div class="relative">
+                                                <input type="password" id="set-moota-token" placeholder="Secret123" class="w-full p-4 pr-16 bg-white border border-sky-100 rounded-xl outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/10 transition-all font-mono text-xs">
+                                                <button type="button" onclick="toggleSensitiveField('set-moota-token', this)" class="absolute inset-y-0 right-3 text-[10px] font-bold uppercase text-sky-600">Show</button>
+                                            </div>
+                                            <p id="moota-token-hint" class="text-[11px] text-slate-500 mt-2"></p>
+                                        </div>
+                                    </div>
+                                    <div class="rounded-2xl border border-white/70 bg-white/70 p-4 text-xs text-slate-500 space-y-3">
+                                        <p class="font-bold text-slate-700">Catatan penggunaan</p>
+                                        <p>1. Moota mengirim payload JSON array via `POST` dan signature di header `Signature`.</p>
+                                        <p>2. Jika Anda memakai Google Apps Script, arahkan webhook ke endpoint Cloudflare Worker atau proxy publik terlebih dahulu agar header `Signature` bisa diteruskan ke Apps Script.</p>
+                                        <p>3. Jalankan `Test Koneksi Moota` sebelum menyimpan agar Webhook URL dan Secret Token tervalidasi lebih dulu.</p>
+                                    </div>
+                                    <div id="moota-test-status" class="hidden rounded-xl border px-4 py-3 text-xs font-medium"></div>
                                 </div>
                                 <div class="rounded-[1.5rem] border border-emerald-100 bg-emerald-50/50 p-5 space-y-4">
                                     <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -948,6 +1174,10 @@
                         <label class="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1 mb-2 block">Harga (Rp)</label>
                         <input type="number" id="p-harga" placeholder="100000" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 transition-all font-bold text-slate-700" required>
                     </div>
+                    <div>
+                        <label class="text-xs font-bold text-slate-400 uppercase tracking-wider ml-1 mb-2 block">Komisi Affiliate (Rp)</label>
+                        <input type="number" id="p-commission" placeholder="0" class="w-full p-4 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:border-indigo-500 transition-all font-bold text-slate-700">
+                    </div>
                 </div>
                 
                 <div>
@@ -966,7 +1196,7 @@
                             <p class="text-[10px] text-slate-400 mt-2">Gunakan URL dari Media Center.</p>
                         </div>
                         <div class="w-20 h-20 bg-slate-100 rounded-xl border border-slate-200 flex items-center justify-center overflow-hidden flex-shrink-0">
-                             <img id="p-image-preview" src="data:," class="w-full h-full object-cover hidden" onerror="this.classList.add('hidden'); document.getElementById('p-image-placeholder').classList.remove('hidden');">
+                             <img id="p-image-preview" src="" class="w-full h-full object-cover hidden" onerror="this.classList.add('hidden'); document.getElementById('p-image-placeholder').classList.remove('hidden');">
                              <i data-lucide="image" class="w-6 h-6 text-slate-300" id="p-image-placeholder"></i>
                         </div>
                     </div>
@@ -1202,6 +1432,7 @@
             const roleAllowed = session.role === 'admin' || session.role === 'demo_admin';
             const hasUnifiedSession = sessionStorage.getItem('auth_v1') === 'true' && roleAllowed && !!session.token;
             if (!hasUnifiedSession) return false;
+            if (session.expiresAt && Date.now() > session.expiresAt) return false;
             return true;
         }
 
@@ -1217,6 +1448,28 @@
         function formatAdminCurrency(value) {
             if (isMaskedAdminValue(value)) return 'Rp ' + String(value);
             return 'Rp ' + Number(value || 0).toLocaleString('id-ID');
+        }
+
+        function scheduleAdminSessionTimeout() {
+            if (window.__adminSessionTimer) {
+                clearTimeout(window.__adminSessionTimer);
+                window.__adminSessionTimer = null;
+            }
+            const expiresAt = Number(sessionStorage.getItem('auth_expires_at') || 0);
+            if (!expiresAt) return;
+            const remaining = expiresAt - Date.now();
+            if (remaining <= 0) {
+                handleAdminSessionExpired();
+                return;
+            }
+            window.__adminSessionTimer = setTimeout(handleAdminSessionExpired, remaining);
+        }
+
+        function handleAdminSessionExpired() {
+            if (window.__adminSessionExpired) return;
+            window.__adminSessionExpired = true;
+            showToast('Sesi admin berakhir setelah 15 menit. Silakan login ulang.', 'warning');
+            setTimeout(() => logout(), 1200);
         }
 
         function ensureAdminSessionActive(showFeedback = true) {
@@ -1333,6 +1586,7 @@
         }
 
         const CACHE_KEY_ADMIN = 'melimpah_admin_data';
+        let MOOTA_URL = ''; let MOOTA_TOKEN_CONFIGURED = false;
         let IK_PUB = ''; let IK_END = ''; let IK_PRIVATE_CONFIGURED = false; let cachedPages = []; let cachedProducts = [];
         let workerMetricsTimer = null;
         let ADMIN_DEMO_MODE = false;
@@ -1351,6 +1605,7 @@
                 'button[onclick="openPageModal()"]',
                 'button[onclick="uploadMedia()"]',
                 'button[onclick="triggerPurgeCache()"]',
+                'button[onclick="testMootaConnection()"]',
                 'button[onclick="testImageKitConnection()"]',
                 '#form-prod button[type="submit"]',
                 '#form-page button[type="submit"]',
@@ -1524,6 +1779,7 @@
                         demo_mode: !!info.demo_mode,
                         read_only: !!info.read_only
                     });
+                    scheduleAdminSessionTimeout();
                     showToast(info.demo_mode ? 'Berhasil masuk ke mode demo admin.' : 'Berhasil Login!', info.demo_mode ? 'warning' : 'success');
                     init(); 
                 } else { 
@@ -1717,6 +1973,11 @@
             document.getElementById('set-bank-owner').value = r.settings.bank_owner || '';
 
             document.getElementById('set-email').value = r.settings.contact_email || ''; 
+            document.getElementById('set-fonnte').value = r.settings.fonnte_token || ''; 
+            document.getElementById('set-moota-url').value = MOOTA_URL = r.settings.moota_gas_url || '';
+            document.getElementById('set-moota-token').value = '';
+            updateMootaHints(!!r.settings.moota_token_configured);
+            document.getElementById('moota-test-status').classList.add('hidden');
             document.getElementById('set-ik-pub').value = IK_PUB = r.settings.ik_public_key || ''; 
             document.getElementById('set-ik-end').value = IK_END = r.settings.ik_endpoint || ''; 
             document.getElementById('set-ik-priv').value = '';
@@ -1746,6 +2007,7 @@
             document.getElementById('login-overlay').style.display = 'none'; 
             document.getElementById('admin-main').style.display = 'flex'; 
             document.getElementById('admin-name').innerText = sessionStorage.getItem('auth_name') || sessionStorage.getItem('adm_name') || 'Admin';
+            scheduleAdminSessionTimeout();
             if (!isDemoAdminSession()) ensureWorkerMetricsPolling();
             
             const cachedDataStr = localStorage.getItem(CACHE_KEY_ADMIN); 
@@ -1915,6 +2177,7 @@ src="https://www.facebook.com/tr?id=${pixelId}&ev=PageView&noscript=1"
             document.getElementById('p-desc').value = p[2]; 
             document.getElementById('p-url').value = p[3]; 
             document.getElementById('p-harga').value = p[4]; 
+            document.getElementById('p-commission').value = p[11] || 0;
             document.getElementById('p-lp').value = p[6] || ""; 
             const imgUrl = p[7] || "";
             document.getElementById('p-image').value = imgUrl;
@@ -2332,23 +2595,7 @@ src="https://www.facebook.com/tr?id=${pixelId}&ev=PageView&noscript=1"
         }
         function openPageModal() { if (guardDemoAdminAction('membuka editor halaman')) return; document.getElementById('form-page').reset(); document.getElementById('pg-is-edit').value = 'false'; (function(m){ m.classList.remove('hidden'); m.classList.add('flex'); })(document.getElementById('modal-page')); }
         function closeModal(id) { const m=document.getElementById(id); m.classList.add('hidden'); m.classList.remove('flex'); }
-        async function logout() {
-            const token = String(sessionStorage.getItem('auth_session_token') || '');
-            const role = String(sessionStorage.getItem('auth_role') || '');
-            try {
-                const endpoint = getApiEndpoint();
-                if (endpoint && token) {
-                    await fetch(endpoint, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            action: 'admin_logout',
-                            auth_session_token: token,
-                            auth_role: role
-                        })
-                    });
-                }
-            } catch (e) {}
+        function logout() {
             clearAdminSession();
             localStorage.removeItem(CACHE_KEY_ADMIN);
             location.reload();
@@ -2403,6 +2650,7 @@ src="https://www.facebook.com/tr?id=${pixelId}&ev=PageView&noscript=1"
                 desc: document.getElementById('p-desc').value, 
                 url: document.getElementById('p-url').value, 
                 harga: document.getElementById('p-harga').value, 
+                commission: document.getElementById('p-commission').value,
                 lp_url: document.getElementById('p-lp').value,
                 image_url: document.getElementById('p-image').value, 
                 pixel_id: document.getElementById('p-pixel-id').value,
@@ -2453,8 +2701,29 @@ src="https://www.facebook.com/tr?id=${pixelId}&ev=PageView&noscript=1"
             await submitFormToGAS('form-branding', { action: 'update_settings', payload: p }, 'Branding Tersimpan!');
         };
 
-        document.getElementById('form-sys').onsubmit = async (e) => {
-            e.preventDefault();
+        document.getElementById('form-sys').onsubmit = async (e) => { 
+            e.preventDefault(); 
+            const mootaCfg = getMootaFormConfig();
+            const mootaValidation = validateMootaFormConfig(mootaCfg);
+            if (mootaValidation.hasAnyValue && mootaValidation.errors.length) {
+                const msg = mootaValidation.errors[0];
+                setMootaStatus(msg, 'error');
+                showToast(msg, 'error');
+                return;
+            }
+
+            if (mootaValidation.hasAnyValue) {
+                const mootaChanged = mootaCfg.gasUrl !== MOOTA_URL || !!mootaCfg.token || !MOOTA_TOKEN_CONFIGURED;
+                if (mootaChanged) {
+                    try {
+                        await testMootaConnection({ silent: true });
+                    } catch (err) {
+                        showToast(err.message || 'Koneksi Moota gagal.', 'error');
+                        return;
+                    }
+                }
+            }
+
             const ikCfg = getImageKitFormConfig();
             const ikValidation = validateImageKitFormConfig(ikCfg, { allowMissingEndpoint: true });
             if (ikValidation.hasAnyValue && ikValidation.errors.length) {
@@ -2482,24 +2751,36 @@ src="https://www.facebook.com/tr?id=${pixelId}&ev=PageView&noscript=1"
                 }
             }
 
-            const p = {
-                contact_email: document.getElementById('set-email').value,
-                wa_admin: document.getElementById('set-wa').value,
+            const p = { 
+                contact_email: document.getElementById('set-email').value, 
+                wa_admin: document.getElementById('set-wa').value, 
                 bank_name: document.getElementById('set-bank-name').value,
                 bank_norek: document.getElementById('set-bank-norek').value,
                 bank_owner: document.getElementById('set-bank-owner').value,
-                ik_public_key: normalizeImageKitInput(document.getElementById('set-ik-pub').value),
+                fonnte_token: document.getElementById('set-fonnte').value, 
+                ik_public_key: normalizeImageKitInput(document.getElementById('set-ik-pub').value), 
                 ik_endpoint: normalizeImageKitEndpoint(document.getElementById('set-ik-end').value)
-            };
+            }; 
+            if (mootaValidation.hasAnyValue) {
+                p.moota_gas_url = normalizeMootaUrl(document.getElementById('set-moota-url').value);
+            }
+            const nextMootaToken = normalizeMootaInput(document.getElementById('set-moota-token').value);
+            if (nextMootaToken) p.moota_token = nextMootaToken;
             const nextPrivateKey = normalizeImageKitInput(document.getElementById('set-ik-priv').value);
             if (nextPrivateKey) p.ik_private_key = nextPrivateKey;
             await submitFormToGAS('form-sys', { action: 'update_settings', payload: p }, 'API Sistem Updated!');
+            if (mootaValidation.hasAnyValue) {
+                MOOTA_URL = p.moota_gas_url;
+            }
+            if (nextMootaToken) document.getElementById('set-moota-token').value = '';
+            updateMootaHints(nextMootaToken ? true : MOOTA_TOKEN_CONFIGURED);
             IK_PUB = p.ik_public_key;
             IK_END = p.ik_endpoint;
             if (nextPrivateKey) {
                 document.getElementById('set-ik-priv').value = '';
                 updateImageKitPrivateHint(true);
             }
+            // Clear local cache agar perubahan langsung terlihat di halaman depan
             localStorage.removeItem('cepat_global_settings');
         };
 

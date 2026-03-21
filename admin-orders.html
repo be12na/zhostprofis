@@ -55,8 +55,7 @@
 
             // 1. Cek Login Admin Area (Prioritas)
             const role = String(sessionStorage.getItem('auth_role') || '').toLowerCase();
-            const expiresAt = Number(sessionStorage.getItem('auth_expires_at') || 0);
-            const isUnifiedAdmin = sessionStorage.getItem('auth_v1') === 'true' && (role === 'admin' || role === 'demo_admin') && !!sessionStorage.getItem('auth_session_token') && (!expiresAt || Date.now() <= expiresAt);
+            const isUnifiedAdmin = sessionStorage.getItem('auth_v1') === 'true' && (role === 'admin' || role === 'demo_admin') && !!sessionStorage.getItem('auth_session_token');
             if(isUnifiedAdmin) {
                 return; // Akses diterima sebagai Admin Area
             }
@@ -274,8 +273,7 @@
 
         function ensureAdminSessionActive() {
             const token = String(sessionStorage.getItem('auth_session_token') || '');
-            const expiresAt = Number(sessionStorage.getItem('auth_expires_at') || 0);
-            if (!token || (expiresAt && Date.now() > expiresAt)) {
+            if (!token) {
                 Swal.fire('Sesi Berakhir', 'Sesi admin tidak valid atau sudah berakhir. Silakan login ulang.', 'warning')
                     .then(() => window.top.location.replace('admin-area.html'));
                 return false;
@@ -310,21 +308,9 @@
             });
         }
 
-        function scheduleSessionTimeout() {
-            const expiresAt = Number(sessionStorage.getItem('auth_expires_at') || 0);
-            if (!expiresAt) return;
-            const remaining = expiresAt - Date.now();
-            if (remaining <= 0) {
-                ensureAdminSessionActive();
-                return;
-            }
-            setTimeout(() => ensureAdminSessionActive(), remaining);
-        }
-
         // ON LOAD
         document.addEventListener('DOMContentLoaded', () => {
             applyDemoState();
-            scheduleSessionTimeout();
             fetchOrders(1);
             
             // Search debounce
