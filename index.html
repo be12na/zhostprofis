@@ -63,7 +63,7 @@
                 ],
                 productCardSelector: '#public-products article',
                 productTitleSelector: '#public-products .catalog-title',
-                productDescriptionSelector: '#public-products .catalog-desc, #public-products [data-product-desc]',
+                productDescriptionSelector: '#public-products [data-product-desc]',
                 productImageSelector: '#public-products img'
             }, window.CEPAT_SEO_CONFIG || {});
 
@@ -744,6 +744,80 @@
     <script>
         const CACHE_KEY_CATALOG = 'cepat_public_catalog';
         const CACHE_AGE_CATALOG = 10 * 60 * 1000;
+        const PUBLIC_SYNC_SIGNAL_KEY = 'cepat_public_sync_signal';
+        const PUBLIC_SYNC_CHANNEL = 'cepat_public_sync_channel';
+        const DEFAULT_CATALOG_PRODUCT_DESCRIPTION = 'Spesifikasi jelas, panduan penggunaan singkat, dan pengiriman aman untuk membantu Anda belanja dengan lebih yakin';
+
+        function normalizeCatalogText(value) {
+            return String(value || '')
+                .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function safePublicUrl(value, fallback = '') {
+            const raw = String(value || '').trim();
+            if (!raw) return fallback;
+            if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/i.test(raw) && !/^https?:/i.test(raw)) return fallback;
+            return raw;
+        }
+
+        function buildCatalogDescription(product) {
+            const normalized = normalizeCatalogText(product && product.desc);
+            return normalized || DEFAULT_CATALOG_PRODUCT_DESCRIPTION;
+        }
+
+        function clearPublicCatalogCache() {
+            const cacheApi = window.CEPAT_CACHE || null;
+            if (cacheApi && typeof cacheApi.removeEntry === 'function') {
+                cacheApi.removeEntry(CACHE_KEY_CATALOG);
+            }
+            try { localStorage.removeItem(CACHE_KEY_CATALOG); } catch (error) {}
+        }
+
+        async function refreshPublicCatalogFromSignal(payload) {
+            const tags = Array.isArray(payload && payload.tags)
+                ? payload.tags.map((tag) => String(tag || '').toLowerCase())
+                : [];
+            if (tags.length && !tags.includes('products')) return;
+            clearPublicCatalogCache();
+            try {
+                const cacheApi = window.CEPAT_CACHE || null;
+                if (cacheApi && typeof cacheApi.refreshManifest === 'function') {
+                    await cacheApi.refreshManifest({ force: true });
+                }
+            } catch (error) {}
+            loadPublicCatalog();
+        }
+
+        function setupRealtimeCatalogSync() {
+            if (window.__CEPAT_PUBLIC_SYNC_READY__) return;
+            window.__CEPAT_PUBLIC_SYNC_READY__ = true;
+            window.addEventListener('storage', (event) => {
+                if (!event || event.key !== PUBLIC_SYNC_SIGNAL_KEY || !event.newValue) return;
+                let payload = null;
+                try { payload = JSON.parse(event.newValue); } catch (error) {}
+                refreshPublicCatalogFromSignal(payload);
+            });
+            if (typeof BroadcastChannel !== 'undefined') {
+                try {
+                    const channel = new BroadcastChannel(PUBLIC_SYNC_CHANNEL);
+                    channel.addEventListener('message', (event) => {
+                        refreshPublicCatalogFromSignal(event && event.data ? event.data : null);
+                    });
+                    window.__CEPAT_PUBLIC_SYNC_CHANNEL__ = channel;
+                } catch (error) {}
+            }
+        }
 
         // Fungsi Render HTML Produk
         function renderCatalog(products) {
@@ -760,29 +834,31 @@
 
             container.innerHTML = [...products].reverse().map((p, index) => {
                 let delayClass = `delay-${(index % 3) + 1}`;
-                const fallbackLetter = String(p.title || 'P').trim().charAt(0).toUpperCase() || 'P';
+                const productTitle = normalizeCatalogText(p && p.title) || 'Produk';
+                const productDesc = buildCatalogDescription(p);
+                const fallbackLetterCandidate = productTitle.charAt(0).toUpperCase();
+                const fallbackLetter = /^[A-Z0-9]$/.test(fallbackLetterCandidate) ? fallbackLetterCandidate : 'P';
                 
                 // Logic URL Detail (Bisa ke LP atau Checkout)
-                let detailUrl = (p.lp_url && p.lp_url !== "") ? p.lp_url : `checkout.html?id=${p.id}`;
-                const checkoutUrl = `checkout.html?id=${p.id}`;
+                const checkoutUrl = `checkout.html?id=${encodeURIComponent(String((p && p.id) || ''))}`;
+                const detailUrl = safePublicUrl(p && p.lp_url, checkoutUrl);
 
-                const imgUrl = p.image_url || '';
+                const imgUrl = safePublicUrl(p && p.image_url, '');
                 const webpUrl = imgUrl && !imgUrl.endsWith('.webp') && imgUrl.includes('imagekit.io') ? imgUrl + '?tr=f-webp,q-75' : imgUrl;
                 const thumbUrl = imgUrl && imgUrl.includes('imagekit.io') ? imgUrl + '?tr=f-webp,q-60,w-300' : imgUrl;
                 return `
                 <article class="catalog-card p-3 md:p-4 flex flex-col h-full fade-in ${delayClass}">
-                    <a href="${detailUrl}" target="_blank" rel="noopener noreferrer" class="catalog-media block overflow-hidden rounded-[1.1rem] bg-slate-100 border border-slate-100">
+                    <a href="${escapeHtml(detailUrl)}" target="_blank" rel="noopener noreferrer" class="catalog-media block overflow-hidden rounded-[1.1rem] bg-slate-100 border border-slate-100">
                         ${imgUrl
-                            ? `<picture><source type="image/webp" srcset="${thumbUrl} 300w, ${webpUrl} 600w" sizes="(max-width: 320px) 280px, (max-width: 768px) 45vw, (max-width: 1024px) 23vw, 18vw"><img src="${imgUrl}" class="catalog-image w-full h-full object-cover" onerror="this.outerHTML='<div class=&quot;catalog-image flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-lg font-black text-slate-400&quot;>${fallbackLetter}</div>'" loading="lazy" decoding="async" fetchpriority="${index < 4 ? 'high' : 'low'}" alt="${String(p.title || 'Produk').replace(/"/g, '&quot;')}"></picture>`
+                            ? `<picture><source type="image/webp" srcset="${escapeHtml(thumbUrl)} 300w, ${escapeHtml(webpUrl)} 600w" sizes="(max-width: 320px) 280px, (max-width: 768px) 45vw, (max-width: 1024px) 23vw, 18vw"><img src="${escapeHtml(imgUrl)}" class="catalog-image w-full h-full object-cover" onerror="this.outerHTML='<div class=&quot;catalog-image flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-lg font-black text-slate-400&quot;>${fallbackLetter}</div>'" loading="lazy" decoding="async" fetchpriority="${index < 4 ? 'high' : 'low'}" alt="${escapeHtml(productTitle)}"></picture>`
                             : `<div class="catalog-image flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-lg font-black text-slate-400">${fallbackLetter}</div>`}
                     </a>
 
                     <div class="flex flex-1 flex-col pt-4">
                         <div class="space-y-2">
                             <p class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Produk Fisik</p>
-                            <h3 class="catalog-title text-sm md:text-[15px] font-bold leading-snug text-slate-800 line-clamp-2">${p.title}</h3>
-                            <p class="catalog-desc text-[11px] md:text-xs leading-5 text-slate-500 line-clamp-3">Spesifikasi jelas, panduan penggunaan singkat, dan pengiriman aman untuk membantu Anda belanja dengan lebih yakin</p>
-                            <p data-product-desc class="text-[10px] md:text-[11px] leading-5 text-slate-400 line-clamp-2" style="min-height: 2.5rem;">${p.desc || ''}</p>
+                            <h3 class="catalog-title text-sm md:text-[15px] font-bold leading-snug text-slate-800 line-clamp-2">${escapeHtml(productTitle)}</h3>
+                            <p class="catalog-desc text-[11px] md:text-xs leading-5 text-slate-500" data-product-desc style="min-height: 3.9rem;">${escapeHtml(productDesc)}</p>
                         </div>
 
                         <div class="mt-auto pt-4 border-t border-slate-100">
@@ -795,13 +871,13 @@
                             </div>
 
                             <div class="grid grid-cols-2 gap-2">
-                                <a href="${detailUrl}"
+                                <a href="${escapeHtml(detailUrl)}"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     class="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-3 text-xs font-bold text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-colors">
                                     Detail
                                 </a>
-                                <a href="${checkoutUrl}"
+                                <a href="${escapeHtml(checkoutUrl)}"
                                     class="inline-flex items-center justify-center rounded-full bg-indigo-600 px-3 py-3 text-xs font-bold text-white shadow-sm shadow-indigo-200 hover:bg-indigo-700 transition-colors">
                                     Checkout
                                 </a>
@@ -915,6 +991,7 @@
         
         window.onload = () => { 
             lucide.createIcons(); 
+            setupRealtimeCatalogSync();
             loadPublicCatalog(); 
             if (window.CEPAT_CACHE && typeof window.CEPAT_CACHE.watchManifest === 'function' && !window.__CEPAT_PUBLIC_CATALOG_WATCH__) {
                 window.__CEPAT_PUBLIC_CATALOG_WATCH__ = window.CEPAT_CACHE.watchManifest(function() {

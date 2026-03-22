@@ -34,6 +34,9 @@ const CACHE_MANIFEST_STORE_KEY = "cepat_cache_manifest_v1";
 const CACHE_MANIFEST_CACHE_TTL_SECONDS = 5;
 const CACHE_MANIFEST_POLL_SECONDS = 15;
 const CACHE_MANIFEST_TAGS = ["settings", "products", "pages", "orders", "users"];
+const PRODUCT_TITLE_MAX_LENGTH = 120;
+const PRODUCT_DESC_MIN_LENGTH = 10;
+const PRODUCT_DESC_MAX_LENGTH = 220;
 
 function getScriptConfig(key) {
   try {
@@ -281,6 +284,87 @@ function ensureOrdersSheetStructure_() {
 
 function sanitizeOrderText_(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function normalizeProductText_(value) {
+  return String(value || "")
+    .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function validateProductText_(label, value, options) {
+  const cfg = options && typeof options === "object" ? options : {};
+  const normalized = normalizeProductText_(value);
+  const min = Math.max(0, Number(cfg.min || 0));
+  const max = Math.max(0, Number(cfg.max || 0));
+
+  if (cfg.required && !normalized) throw new Error(label + " wajib diisi");
+  if (!normalized) return normalized;
+  if (/[<>]/.test(String(value || ""))) {
+    throw new Error(label + " tidak boleh mengandung tag HTML atau karakter < >");
+  }
+  if (min && normalized.length < min) {
+    throw new Error(label + " minimal " + min + " karakter");
+  }
+  if (max && normalized.length > max) {
+    throw new Error(label + " maksimal " + max + " karakter");
+  }
+  return normalized;
+}
+
+function normalizeProductPayload_(input) {
+  const source = input && typeof input === "object" ? input : {};
+  const status = String(source.status || "Active").trim() || "Active";
+  const normalized = {
+    id: normalizeProductText_(source.id),
+    title: validateProductText_("Nama Produk", source.title, { required: true, min: 3, max: PRODUCT_TITLE_MAX_LENGTH }),
+    desc: validateProductText_("Deskripsi Singkat", source.desc, { required: true, min: PRODUCT_DESC_MIN_LENGTH, max: PRODUCT_DESC_MAX_LENGTH }),
+    url: normalizeProductText_(source.url),
+    harga: Math.max(0, toNumberSafe_(source.harga)),
+    status: status,
+    lp_url: normalizeProductText_(source.lp_url),
+    image_url: sanitizeAssetUrl_(source.image_url),
+    pixel_id: normalizeProductText_(source.pixel_id),
+    pixel_token: normalizeProductText_(source.pixel_token),
+    pixel_test_code: normalizeProductText_(source.pixel_test_code)
+  };
+  if (!normalized.id) throw new Error("ID Produk wajib diisi");
+  if (!normalized.url) throw new Error("URL Referensi Produk wajib diisi");
+  if (!normalized.lp_url) throw new Error("URL Landing Page wajib diisi");
+  return normalized;
+}
+
+function mapProductRowToObject_(row) {
+  const source = Array.isArray(row) ? row : [];
+  return {
+    id: normalizeProductText_(source[0]),
+    title: normalizeProductText_(source[1]),
+    desc: normalizeProductText_(source[2]),
+    url: normalizeProductText_(source[3]),
+    harga: toNumberSafe_(source[4]),
+    lp_url: normalizeProductText_(source[6]),
+    image_url: sanitizeAssetUrl_(source[7]),
+    pixel_id: normalizeProductText_(source[8]),
+    pixel_token: normalizeProductText_(source[9]),
+    pixel_test_code: normalizeProductText_(source[10])
+  };
+}
+
+function normalizeAdminProductRows_(rows) {
+  return (Array.isArray(rows) ? rows : []).map(function(row) {
+    const source = Array.isArray(row) ? row.slice() : [];
+    source[0] = normalizeProductText_(source[0]);
+    source[1] = normalizeProductText_(source[1]);
+    source[2] = normalizeProductText_(source[2]);
+    source[3] = normalizeProductText_(source[3]);
+    source[6] = normalizeProductText_(source[6]);
+    source[7] = sanitizeAssetUrl_(source[7]);
+    source[8] = normalizeProductText_(source[8]);
+    source[9] = normalizeProductText_(source[9]);
+    source[10] = normalizeProductText_(source[10]);
+    return source;
+  });
 }
 
 function normalizeOrderStatus_(value) {
@@ -1290,22 +1374,11 @@ function getProductDetail(d, cfg) {
     const rules = getCachedData_("access_rules", function() {
       return mustSheet_("Access_Rules").getDataRange().getValues();
     }, 3600);
-    const pId = String(d.id || d.product_id || "").trim();
+    const pId = normalizeProductText_(d.id || d.product_id || "");
     let productData = null;
     for (let i = 1; i < rules.length; i++) {
-      if (String(rules[i][0]) === pId && String(rules[i][5]).trim() === "Active") {
-        productData = {
-          id: pId,
-          title: String(rules[i][1] || "").trim(),
-          desc: String(rules[i][2] || "").trim(),
-          url: String(rules[i][3] || "").trim(),
-          harga: toNumberSafe_(rules[i][4]),
-          lp_url: String(rules[i][6] || "").trim(),
-          image_url: String(rules[i][7] || "").trim(),
-          pixel_id: String(rules[i][8] || "").trim(),
-          pixel_token: String(rules[i][9] || "").trim(),
-          pixel_test_code: String(rules[i][10] || "").trim()
-        };
+      if (normalizeProductText_(rules[i][0]) === pId && String(rules[i][5]).trim() === "Active") {
+        productData = mapProductRowToObject_(rules[i]);
         break;
       }
     }
@@ -1362,22 +1435,14 @@ function getProducts(d, cfg, cachedOrders) {
   const available = [];
   for (let i = 1; i < rules.length; i++) {
     if (String(rules[i][5]).trim() !== "Active") continue;
-    const productId = String(rules[i][0] || "").trim();
-    const title = String(rules[i][1] || "").trim();
+    const normalizedProduct = mapProductRowToObject_(rules[i]);
+    const productId = normalizedProduct.id;
+    const title = normalizedProduct.title;
     const hasAccess = !!(purchasedIds[productId] || purchasedNames[String(title).toLowerCase()]);
-    const product = {
-      id: productId,
-      title: title,
-      desc: String(rules[i][2] || "").trim(),
-      url: hasAccess ? String(rules[i][3] || "").trim() : "#",
-      harga: toNumberSafe_(rules[i][4]),
-      access: hasAccess,
-      lp_url: String(rules[i][6] || "").trim(),
-      image_url: String(rules[i][7] || "").trim(),
-      pixel_id: String(rules[i][8] || "").trim(),
-      pixel_token: String(rules[i][9] || "").trim(),
-      pixel_test_code: String(rules[i][10] || "").trim()
-    };
+    const product = Object.assign({}, normalizedProduct, {
+      url: hasAccess ? normalizedProduct.url : "#",
+      access: hasAccess
+    });
     if (targetMode) {
       if (hasAccess) available.push(product);
     } else if (hasAccess && email) {
@@ -1843,12 +1908,13 @@ function saveProduct(d) {
     const s = mustSheet_("Access_Rules");
     const requiredCols = 11;
     if (s.getMaxColumns() < requiredCols) s.insertColumnsAfter(s.getMaxColumns(), requiredCols - s.getMaxColumns());
-    const dataRow = [d.id, d.title, d.desc, d.url, d.harga, d.status, d.lp_url, d.image_url, d.pixel_id, d.pixel_token, d.pixel_test_code];
+    const product = normalizeProductPayload_(d);
+    const dataRow = [product.id, product.title, product.desc, product.url, product.harga, product.status, product.lp_url, product.image_url, product.pixel_id, product.pixel_token, product.pixel_test_code];
     const isEdit = String(d.is_edit) === "true";
     if (isEdit) {
       const rows = s.getDataRange().getValues();
       for (let i = 1; i < rows.length; i++) {
-        if (String(rows[i][0]).trim() === String(d.id).trim()) {
+        if (String(rows[i][0]).trim() === product.id) {
           s.getRange(i + 1, 1, 1, requiredCols).setValues([dataRow]);
           invalidateCaches_(["access_rules"]);
           return { status: "success", cache_manifest: touchCacheTags_(["products"]) };
@@ -1858,7 +1924,7 @@ function saveProduct(d) {
     }
     const rows = s.getDataRange().getValues();
     for (let i = 1; i < rows.length; i++) {
-      if (String(rows[i][0]).trim() === String(d.id).trim()) {
+      if (String(rows[i][0]).trim() === product.id) {
         return { status: "error", message: "ID Produk sudah digunakan. Mohon refresh halaman." };
       }
     }
@@ -2419,7 +2485,7 @@ function getAdminData(d, cfg) {
       session_expires_at: session.expires_at,
       stats: { users: users.length - 1, orders: orders.length, rev: rev },
       orders: orders.slice(0, 20),
-      products: products.slice(1),
+      products: normalizeAdminProductRows_(products.slice(1)),
       pages: pages.slice(1),
       settings: settings,
       users: users.slice(1).reverse().slice(0, 20),
