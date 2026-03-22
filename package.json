@@ -6,6 +6,7 @@
     "setup": "node setup.js",
     "validate": "node validate-config.js",
     "validate:seo": "node validate-seo.js",
+    "test:cache-runtime": "node scripts/test-cache-runtime.js",
     "audit:worker": "node worker-budget-audit.js",
     "generate:demo-seed": "node scripts/generate-demo-seed.js",
     "sync:installer": "node scripts/sync-installer.js",

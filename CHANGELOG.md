@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-03-22
+
+### Changed
+
+- Runtime cache client sekarang menganggap manifest lokal lebih tua dari 5 detik sebagai stale signal, sehingga halaman live tidak lagi terlalu cepat percaya pada cache browser lama setelah reload.
+- Invalidation manifest sekarang dibroadcast lintas-tab lewat `localStorage` dan `BroadcastChannel`, sehingga tab publik, checkout, dashboard, dan akses bisa refresh lebih cepat setelah admin mengubah data.
+- Ditambahkan regression test `scripts/test-cache-runtime.js` untuk memverifikasi refresh manifest sebelum cacheable fetch, stale detection saat manifest tua, dan reaksi watcher tanpa menunggu interval poll.
+
 ## 2026-03-21
 
 ### Removed

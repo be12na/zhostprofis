@@ -145,6 +145,8 @@ Layer cache aktif di runtime saat ini:
 TTL dan invalidation yang direkomendasikan / aktif:
 
 - Manifest versi cache: memory 5 detik, polling browser 15 detik.
+- Manifest lokal yang lebih tua dari 5 detik kini dianggap provisional, sehingga halaman akan refresh manifest dulu sebelum mempercayai cache read-only lama.
+- Invalidation manifest kini disiarkan lintas-tab via `localStorage` + `BroadcastChannel`, jadi tab live yang sedang terbuka bisa bereaksi tanpa menunggu poll berikutnya.
 - `get_global_settings`: browser storage 1 jam, edge 300 detik, tapi key cache ikut versi `settings`.
 - `get_products` / `get_product`: browser storage 60 detik, edge 60 detik, key cache ikut versi `products` dan konteks order bila relevan.
 - `get_page_content`: browser storage 60 detik, halaman `p.html` menyimpan shell cache 5 menit, key cache ikut versi `pages`.

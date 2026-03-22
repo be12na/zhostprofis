@@ -166,8 +166,13 @@
                 var _pendingReq = new Map();
                 var _cachePrefix = 'cepat_api_cache_v3::';
                 var _manifestStorageKey = 'cepat_cache_manifest_v1';
+                var _manifestSignalStorageKey = 'cepat_cache_manifest_signal_v1';
+                var _manifestSignalChannelName = 'cepat_cache_manifest_channel';
                 var _manifestMemTtlMs = 5000;
                 var _manifestPending = null;
+                var _manifestSubscribers = [];
+                var _manifestChannel = null;
+                var _manifestTabId = 'tab_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
                 var _actionMeta = {
                     get_cache_manifest: { ttl: 5 * 1000, storage: 'memory' },
                     get_global_settings: { ttl: 3600 * 1000, storage: 'local' },
@@ -283,13 +288,52 @@
                 var _normalizeManifest = function (manifest) {
                     var raw = manifest && typeof manifest === 'object' ? manifest : {};
                     var versions = raw.versions && typeof raw.versions === 'object' ? raw.versions : {};
+                    var fetchedAt = Number(raw.fetched_at || 0);
                     return {
                         schema: Number(raw.schema || 1) || 1,
                         updated_at: Number(raw.updated_at || 0) || 0,
                         poll_seconds: Math.max(5, Number(raw.poll_seconds || 15) || 15),
                         versions: versions,
-                        fetched_at: Number(raw.fetched_at || Date.now()) || Date.now()
+                        fetched_at: (isFinite(fetchedAt) && fetchedAt > 0) ? fetchedAt : 0
                     };
+                };
+                var _cloneManifest = function (manifest) {
+                    try {
+                        return JSON.parse(JSON.stringify(_normalizeManifest(manifest)));
+                    } catch (e) {
+                        return _normalizeManifest(manifest);
+                    }
+                };
+                var _isManifestFresh = function (manifest) {
+                    var fetchedAt = Number(manifest && manifest.fetched_at || 0);
+                    return !!(fetchedAt && (Date.now() - fetchedAt <= _manifestMemTtlMs));
+                };
+                var _notifyManifestSubscribers = function (manifest) {
+                    var snapshot = _cloneManifest(manifest);
+                    _manifestSubscribers.slice().forEach(function (subscriber) {
+                        try { subscriber(snapshot); } catch (e) { }
+                    });
+                };
+                var _broadcastManifestUpdate = function (manifest, options) {
+                    if (options && options.broadcast === false) return;
+                    var payload = {
+                        origin: _manifestTabId,
+                        at: Date.now(),
+                        manifest: _normalizeManifest(manifest)
+                    };
+                    try {
+                        var store = _storageFor('local');
+                        if (store) {
+                            store.setItem(_manifestSignalStorageKey, JSON.stringify(payload));
+                            store.removeItem(_manifestSignalStorageKey);
+                        }
+                    } catch (e) { }
+                    try {
+                        if (typeof BroadcastChannel !== 'undefined') {
+                            if (!_manifestChannel) _manifestChannel = new BroadcastChannel(_manifestSignalChannelName);
+                            _manifestChannel.postMessage(payload);
+                        }
+                    } catch (e) { }
                 };
                 var _readStoredManifest = function () {
                     try {
@@ -335,15 +379,19 @@
                         return tag + ':' + Number(active[tag] || 0);
                     }).join('|');
                 };
-                var _setManifest = function (manifest) {
+                var _setManifest = function (manifest, options) {
+                    var cfg = options || {};
                     var next = _normalizeManifest(manifest);
                     var currentToken = _manifestToken(Object.keys((_manifestState && _manifestState.versions) || {}), _manifestState);
                     var nextToken = _manifestToken(Object.keys(next.versions || {}), next);
+                    var changed = !!(nextToken && nextToken !== currentToken);
                     next.fetched_at = Date.now();
                     _manifestState = next;
                     _writeStoredManifest(next);
-                    if (nextToken && nextToken !== currentToken) {
+                    if (changed) {
                         _markStat('cache_invalidations', 'manifest');
+                        _notifyManifestSubscribers(next);
+                        _broadcastManifestUpdate(next, cfg);
                     }
                     return next;
                 };
@@ -351,6 +399,12 @@
                     if (_manifestState && _manifestState.versions) return _manifestState;
                     _manifestState = _readStoredManifest() || _normalizeManifest({ versions: {} });
                     return _manifestState;
+                };
+                var _ensureFreshManifestForAction = function (action, init) {
+                    var tags = _resolveActionTags(action, init);
+                    if (!tags.length) return Promise.resolve(_getKnownManifest());
+                    if (_isManifestFresh(_getKnownManifest())) return Promise.resolve(_getKnownManifest());
+                    return _refreshManifestFromNetwork(false);
                 };
                 var _hash = function (text) {
                     var str = String(text || '');
@@ -502,7 +556,7 @@
                 };
                 var _refreshManifestFromNetwork = async function (force) {
                     var manifest = _getKnownManifest();
-                    if (!force && manifest && manifest.fetched_at && (Date.now() - Number(manifest.fetched_at || 0)) <= _manifestMemTtlMs) {
+                    if (!force && _isManifestFresh(manifest)) {
                         return manifest;
                     }
                     if (_manifestPending) return _manifestPending;
@@ -525,6 +579,27 @@
                     });
                     return _manifestPending;
                 };
+                try {
+                    if (!window.__CEPAT_MANIFEST_BRIDGE_READY__) {
+                        window.__CEPAT_MANIFEST_BRIDGE_READY__ = true;
+                        window.addEventListener('storage', function (event) {
+                            if (!event || event.key !== _manifestSignalStorageKey || !event.newValue) return;
+                            var payload = _safeJsonParse(event.newValue);
+                            if (!payload || payload.origin === _manifestTabId || !payload.manifest) return;
+                            _setManifest(payload.manifest, { broadcast: false });
+                        });
+                        if (typeof BroadcastChannel !== 'undefined') {
+                            try {
+                                if (!_manifestChannel) _manifestChannel = new BroadcastChannel(_manifestSignalChannelName);
+                                _manifestChannel.addEventListener('message', function (event) {
+                                    var payload = event && event.data ? event.data : null;
+                                    if (!payload || payload.origin === _manifestTabId || !payload.manifest) return;
+                                    _setManifest(payload.manifest, { broadcast: false });
+                                });
+                            } catch (e) { }
+                        }
+                    }
+                } catch (e) { }
                 try {
                     window.CEPAT_CACHE = {
                         getManifest: function () {
@@ -556,13 +631,15 @@
                                 var staleByAge = !!(maxAge && (!parsed.time || (now - Number(parsed.time || 0) > maxAge)));
                                 var staleByVersion = !!(expectedToken && storedToken && expectedToken !== storedToken);
                                 var staleByMissingVersion = !!(expectedToken && !storedToken);
+                                var staleByManifestAge = !!(expectedToken && !_isManifestFresh(_getKnownManifest()));
                                 return {
                                     data: Object.prototype.hasOwnProperty.call(parsed, 'data') ? parsed.data : parsed,
                                     time: Number(parsed.time || 0),
-                                    stale: staleByAge || staleByVersion || staleByMissingVersion,
+                                    stale: staleByAge || staleByVersion || staleByMissingVersion || staleByManifestAge,
                                     missing: false,
                                     versionToken: storedToken,
                                     expectedVersionToken: expectedToken,
+                                    manifestFresh: _isManifestFresh(_getKnownManifest()),
                                     payload: parsed
                                 };
                             } catch (e) {
@@ -597,23 +674,30 @@
                             var stopped = false;
                             var includeHidden = !!cfg.includeHidden;
                             var lastToken = _manifestToken(Object.keys((_getKnownManifest().versions) || {}), _getKnownManifest());
+                            var onManifest = function (manifest) {
+                                if (stopped || !manifest) return;
+                                if (!includeHidden && typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+                                var nextToken = _manifestToken(Object.keys((manifest.versions) || {}), manifest);
+                                if (!nextToken || nextToken === lastToken) return;
+                                lastToken = nextToken;
+                                try { callback(JSON.parse(JSON.stringify(manifest))); } catch (e) { }
+                            };
                             var intervalMs = Math.max(5000, Number(cfg.intervalMs || ((_getKnownManifest().poll_seconds || 15) * 1000)));
                             var tick = function () {
                                 if (stopped) return;
                                 if (!includeHidden && typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
                                 _refreshManifestFromNetwork(false).then(function (manifest) {
-                                    if (stopped || !manifest) return;
-                                    var nextToken = _manifestToken(Object.keys((manifest.versions) || {}), manifest);
-                                    if (!nextToken || nextToken === lastToken) return;
-                                    lastToken = nextToken;
-                                    try { callback(JSON.parse(JSON.stringify(manifest))); } catch (e) { }
+                                    onManifest(manifest);
                                 });
                             };
+                            _manifestSubscribers.push(onManifest);
                             var timer = setInterval(tick, intervalMs);
                             if (cfg.immediate !== false) tick();
                             return function () {
                                 stopped = true;
                                 clearInterval(timer);
+                                var idx = _manifestSubscribers.indexOf(onManifest);
+                                if (idx !== -1) _manifestSubscribers.splice(idx, 1);
                             };
                         }
                     };
@@ -625,40 +709,42 @@
                         var method = (init && init.method ? String(init.method) : (input && input.method ? String(input.method) : 'GET')).toUpperCase();
                         var action = _parseAction(init);
                         if (method === 'POST' && _isCacheableAction(action)) {
-                            var k = _cacheKey(url, init, action);
-                            var hit = _cacheGet(k);
-                            if (hit) {
-                                _applyManifestFromPayload(_safeJsonParse(hit.body));
-                                _markStat('memory_cache_hits', action);
-                                return Promise.resolve(_toResponse(hit));
-                            }
-                            var storageHit = _storageGet(action, url, init);
-                            if (storageHit) {
-                                _applyManifestFromPayload(_safeJsonParse(storageHit.body));
-                                _cacheSet(k, Number(_actionTtl[action] || 0), storageHit);
-                                _markStat('storage_cache_hits', action);
-                                return Promise.resolve(_toResponse(storageHit));
-                            }
-                            if (_pendingReq.has(k)) {
-                                _markStat('deduped_requests', action);
-                                return _pendingReq.get(k).then(function (payload) { return _toResponse(payload); });
-                            }
-                            var ttl = Number(_actionTtl[action] || 0);
-                            _markStat('network_requests', action);
-                            _fetchStats.last_network_at = Date.now();
-                            var p = _fetchWithRetry(input, init)
-                                .then(async function (res) {
-                                    var payload = await _responsePayload(res.clone());
-                                    _applyManifestFromPayload(_safeJsonParse(payload.body));
-                                    if (res.ok && ttl > 0) {
-                                        _cacheSet(k, ttl, payload);
-                                        _storageSet(action, url, init, ttl, payload);
-                                    }
-                                    return payload;
-                                })
-                                .finally(function () { _pendingReq.delete(k); });
-                            _pendingReq.set(k, p);
-                            return p.then(function (payload) { return _toResponse(payload); });
+                            return _ensureFreshManifestForAction(action, init).then(function () {
+                                var k = _cacheKey(url, init, action);
+                                var hit = _cacheGet(k);
+                                if (hit) {
+                                    _applyManifestFromPayload(_safeJsonParse(hit.body));
+                                    _markStat('memory_cache_hits', action);
+                                    return _toResponse(hit);
+                                }
+                                var storageHit = _storageGet(action, url, init);
+                                if (storageHit) {
+                                    _applyManifestFromPayload(_safeJsonParse(storageHit.body));
+                                    _cacheSet(k, Number(_actionTtl[action] || 0), storageHit);
+                                    _markStat('storage_cache_hits', action);
+                                    return _toResponse(storageHit);
+                                }
+                                if (_pendingReq.has(k)) {
+                                    _markStat('deduped_requests', action);
+                                    return _pendingReq.get(k).then(function (payload) { return _toResponse(payload); });
+                                }
+                                var ttl = Number(_actionTtl[action] || 0);
+                                _markStat('network_requests', action);
+                                _fetchStats.last_network_at = Date.now();
+                                var p = _fetchWithRetry(input, init)
+                                    .then(async function (res) {
+                                        var payload = await _responsePayload(res.clone());
+                                        _applyManifestFromPayload(_safeJsonParse(payload.body));
+                                        if (res.ok && ttl > 0) {
+                                            _cacheSet(k, ttl, payload);
+                                            _storageSet(action, url, init, ttl, payload);
+                                        }
+                                        return payload;
+                                    })
+                                    .finally(function () { _pendingReq.delete(k); });
+                                _pendingReq.set(k, p);
+                                return p.then(function (payload) { return _toResponse(payload); });
+                            });
                         }
                         return _fetchWithRetry(input, init).then(async function (res) {
                             if (method === 'POST' && _isMutatingAction(action) && res && res.ok) {
