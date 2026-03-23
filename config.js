@@ -122,7 +122,7 @@
             if (_proto === 'https:' || _proto === 'http:') {
                 if (_host !== 'localhost' && _host !== '127.0.0.1') _api = '/api';
             }
-        } catch (e) { }
+        } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
 
         // Expose GAS_URL for explicit direct fallback/debug (hidden)
         try {
@@ -156,7 +156,7 @@
                 enumerable: false
             });
         } catch (e) {
-            try { window.API_URL = _api; } catch (e2) { }
+            try { window.API_URL = _api; } catch (e2) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e2); }
         }
         try {
             if (!window.__CEPAT_FETCH_WRAPPED__ && typeof window.fetch === 'function') {
@@ -211,19 +211,19 @@
                             if (!_fetchStats.by_action[action]) _fetchStats.by_action[action] = {};
                             _fetchStats.by_action[action][name] = Number((_fetchStats.by_action[action][name] || 0)) + 1;
                         }
-                    } catch (e) { }
+                    } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                 };
                 try {
                     window.__CEPAT_FETCH_STATS__ = _fetchStats;
                     window.__CEPAT_GET_FETCH_STATS__ = function () {
                         return JSON.parse(JSON.stringify(_fetchStats));
                     };
-                } catch (e) { }
+                } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                 var _getUrl = function (input) {
                     try {
                         if (typeof input === 'string') return input;
                         if (input && typeof input.url === 'string') return input.url;
-                    } catch (e) { }
+                    } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                     return '';
                 };
                 var _isScriptTarget = function (url) {
@@ -240,7 +240,7 @@
                         if (!t) return '';
                         var obj = JSON.parse(t);
                         if (obj && typeof obj.action === 'string') return obj.action;
-                    } catch (e) { }
+                    } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                     return '';
                 };
                 var _isRetryableStatus = function (status) {
@@ -267,7 +267,7 @@
                     try {
                         if (kind === 'local' && typeof window.localStorage !== 'undefined') return window.localStorage;
                         if (kind === 'session' && typeof window.sessionStorage !== 'undefined') return window.sessionStorage;
-                    } catch (e) { }
+                    } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                     return null;
                 };
                 var _safeJsonParse = function (value) {
@@ -311,7 +311,7 @@
                 var _notifyManifestSubscribers = function (manifest) {
                     var snapshot = _cloneManifest(manifest);
                     _manifestSubscribers.slice().forEach(function (subscriber) {
-                        try { subscriber(snapshot); } catch (e) { }
+                        try { subscriber(snapshot); } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                     });
                 };
                 var _broadcastManifestUpdate = function (manifest, options) {
@@ -327,13 +327,13 @@
                             store.setItem(_manifestSignalStorageKey, JSON.stringify(payload));
                             store.removeItem(_manifestSignalStorageKey);
                         }
-                    } catch (e) { }
+                    } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                     try {
                         if (typeof BroadcastChannel !== 'undefined') {
                             if (!_manifestChannel) _manifestChannel = new BroadcastChannel(_manifestSignalChannelName);
                             _manifestChannel.postMessage(payload);
                         }
-                    } catch (e) { }
+                    } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                 };
                 var _readStoredManifest = function () {
                     try {
@@ -351,7 +351,7 @@
                         var store = _storageFor('local');
                         if (!store) return;
                         store.setItem(_manifestStorageKey, JSON.stringify(manifest));
-                    } catch (e) { }
+                    } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                 };
                 var _manifestState = _readStoredManifest() || _normalizeManifest({ versions: {} });
                 var _resolveActionTags = function (action, init) {
@@ -429,7 +429,7 @@
                         res.headers.forEach(function (v, k) {
                             if (k === 'content-type' || k === 'x-api-contract' || k === 'cache-control' || k === 'x-request-id') headersObj[k] = v;
                         });
-                    } catch (e) { }
+                    } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                     if (!headersObj['content-type']) headersObj['content-type'] = 'application/json; charset=utf-8';
                     return { status: res.status, statusText: res.statusText || '', headers: headersObj, body: text };
                 };
@@ -451,7 +451,7 @@
                     _cacheMem.set(key, { exp: Date.now() + ttlMs, payload: payload });
                 };
                 var _cacheClear = function () {
-                    try { _cacheMem.clear(); } catch (e) { }
+                    try { _cacheMem.clear(); } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                     try {
                         ['local', 'session'].forEach(function (kind) {
                             var store = _storageFor(kind);
@@ -461,7 +461,7 @@
                                 if (key && key.indexOf(_cachePrefix) === 0) store.removeItem(key);
                             }
                         });
-                    } catch (e) { }
+                    } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                 };
                 var _storageGet = function (action, url, init) {
                     try {
@@ -491,7 +491,7 @@
                             exp: Date.now() + ttlMs,
                             payload: payload
                         }));
-                    } catch (e) { }
+                    } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                 };
                 var _calcDelay = function (attempt) {
                     var base = Math.min(8000, 250 * Math.pow(2, attempt - 1));
@@ -551,7 +551,7 @@
                             _setManifest(payload.cache_manifest);
                             return true;
                         }
-                    } catch (e) { }
+                    } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                     return false;
                 };
                 var _refreshManifestFromNetwork = async function (force) {
@@ -596,10 +596,10 @@
                                     if (!payload || payload.origin === _manifestTabId || !payload.manifest) return;
                                     _setManifest(payload.manifest, { broadcast: false });
                                 });
-                            } catch (e) { }
+                            } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                         }
                     }
-                } catch (e) { }
+                } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                 try {
                     window.CEPAT_CACHE = {
                         getManifest: function () {
@@ -659,7 +659,7 @@
                             };
                             try {
                                 store.setItem(String(key || ''), JSON.stringify(payload));
-                            } catch (e) { }
+                            } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                             return payload;
                         },
                         removeEntry: function (key, options) {
@@ -667,7 +667,7 @@
                                 var storageKind = options && options.storage === 'session' ? 'session' : 'local';
                                 var store = _storageFor(storageKind);
                                 if (store) store.removeItem(String(key || ''));
-                            } catch (e) { }
+                            } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                         },
                         watchManifest: function (callback, options) {
                             var cfg = options || {};
@@ -680,7 +680,7 @@
                                 var nextToken = _manifestToken(Object.keys((manifest.versions) || {}), manifest);
                                 if (!nextToken || nextToken === lastToken) return;
                                 lastToken = nextToken;
-                                try { callback(JSON.parse(JSON.stringify(manifest))); } catch (e) { }
+                                try { callback(JSON.parse(JSON.stringify(manifest))); } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                             };
                             var intervalMs = Math.max(5000, Number(cfg.intervalMs || ((_getKnownManifest().poll_seconds || 15) * 1000)));
                             var tick = function () {
@@ -701,7 +701,7 @@
                             };
                         }
                     };
-                } catch (e) { }
+                } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                 window.__CEPAT_FETCH_WRAPPED__ = true;
                 window.fetch = function (input, init) {
                     var url = _getUrl(input);
@@ -796,12 +796,12 @@
                                     _storageSet(action, endpoint, syntheticInit, ttl, syntheticPayload);
                                 });
                             }
-                        } catch (e) { }
+                        } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
                         return payload;
                     };
-                } catch (e) { }
+                } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
             }
-        } catch (e) { }
+        } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
     } else {
         console.error('[Config] Failed to initialize configuration');
     }

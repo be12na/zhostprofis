@@ -358,7 +358,7 @@ function startWatchMode() {
     try {
       const pid = readWatcherPid();
       if (pid === process.pid) cleanupWatcherPidFile();
-    } catch (error) { }
+    } catch (error) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', error); }
   };
   process.on('exit', cleanup);
   process.on('SIGINT', () => {

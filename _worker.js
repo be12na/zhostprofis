@@ -51,7 +51,7 @@ const _blockedPaths = new Set([
 ]);
 
 function inc(key, n = 1) {
-  try { _metrics[key] = (_metrics[key] || 0) + n; } catch (e) { }
+  try { _metrics[key] = (_metrics[key] || 0) + n; } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
 }
 
 function mapIncLimited(map, key, limit = 50) {
@@ -153,7 +153,7 @@ async function maybeDispatchBudgetAlert(env, ctx) {
         body: payload
       }));
     }
-  } catch (e) { }
+  } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
 }
 
 function apiCircuitState() {
@@ -293,7 +293,7 @@ export default {
             if (res.ok) ctx.waitUntil(caches.default.put(cacheKey, withHeaders.clone()));
             return maybeCompress(request, withHeaders);
           }
-        } catch (e) { }
+        } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
       }
     }
 
@@ -307,6 +307,7 @@ export default {
       }
     } catch (e) {
       // fallback if ASSETS binding fails
+      if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e);
     }
 
     // Final fallback: fetch the original URL directly
@@ -326,7 +327,7 @@ function corsHeadersFor(request, env) {
       const reqUrl = new URL(request.url);
       const oUrl = new URL(origin);
       if (reqUrl.origin === oUrl.origin) allowOrigin = origin;
-    } catch (_) { }
+    } catch (_) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', _); }
   }
   const headers = {
     'Vary': 'Origin',
@@ -637,7 +638,7 @@ async function normalizeApiUpstreamResponse(upstream, request, env, requestId) {
   }
 
   let parsed = null;
-  try { parsed = JSON.parse(txt); } catch (e) { }
+  try { parsed = JSON.parse(txt); } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
 
   if (!parsed || typeof parsed !== 'object') {
     const preview = String(txt || '').replace(/[^\x20-\x7E]/g, ' ').replace(/\s+/g, ' ').slice(0, 180);

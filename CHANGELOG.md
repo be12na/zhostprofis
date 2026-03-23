@@ -13,7 +13,7 @@
 ### Removed
 
 - Seluruh integrasi Fonnte dari backend, admin area, dan konfigurasi runtime.
-- Seluruh integrasi Moota dari Apps Script, Worker, admin area, dokumentasi, dan seed demo.
+- Seluruh integrasi payment gateway legacy dari Apps Script, Worker, admin area, dokumentasi, dan seed demo.
 - Seluruh fitur affiliate dari backend, dashboard member, frontend checkout, propagasi query param, dan seed demo.
 - Field `commission` dari schema produk demo dan generator seed.
 

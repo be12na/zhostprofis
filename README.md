@@ -45,7 +45,7 @@ Script Properties yang masih relevan:
 - `ik_private_key`
 - `ADMIN_API_TOKEN`
 
-Tidak ada lagi Script Properties untuk integrasi Moota, Fonnte, atau affiliate.
+Tidak ada lagi Script Properties untuk payment gateway legacy, Fonnte, atau affiliate.
 
 ## Schema Utama
 
@@ -111,7 +111,7 @@ Pengaturan yang aktif di admin area:
 - ImageKit public key, endpoint, dan private key
 - Cloudflare cache config
 
-Pengaturan lama untuk Moota, Fonnte, dan affiliate sudah dihapus dari UI maupun backend.
+Pengaturan lama untuk payment gateway legacy, Fonnte, dan affiliate sudah dihapus dari UI maupun backend.
 
 ## ImageKit
 
@@ -179,7 +179,7 @@ node scripts/generate-demo-seed.js
 
 Seed saat ini sudah dibersihkan dari:
 
-- setting Moota dan Fonnte
+- setting payment gateway legacy dan Fonnte
 - field `commission`
 - konten dan slug affiliate
 
@@ -205,7 +205,7 @@ npm run audit:worker
 Fitur berikut sudah dipensiunkan dari runtime aktif:
 
 - integrasi Fonnte
-- integrasi Moota
+- integrasi payment gateway legacy
 - seluruh fitur affiliate
 
-Lihat `CHANGELOG.md` dan `REMOVAL_AUDIT_20260321.md` untuk detail perubahan dan audit penghapusan.
+Lihat `CHANGELOG.md` untuk detail perubahan penghapusan fitur legacy.

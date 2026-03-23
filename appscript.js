@@ -43,7 +43,7 @@ function getScriptConfig(key) {
     const p = PropertiesService.getScriptProperties();
     const v = p.getProperty(String(key || ""));
     if (v !== null && v !== undefined && String(v) !== "") return String(v);
-  } catch (e) {}
+  } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
   return SCRIPT_CONFIG[key] || "";
 }
 
@@ -157,11 +157,11 @@ function writeCacheManifest_(manifest) {
   const normalized = normalizeCacheManifest_(manifest);
   try {
     PropertiesService.getScriptProperties().setProperty(CACHE_MANIFEST_STORE_KEY, JSON.stringify(normalized));
-  } catch (e) { }
+  } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
   invalidateCaches_([CACHE_MANIFEST_CACHE_KEY]);
   try {
     CacheService.getScriptCache().put(CACHE_MANIFEST_CACHE_KEY, JSON.stringify(normalized), CACHE_MANIFEST_CACHE_TTL_SECONDS);
-  } catch (e) { }
+  } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
   return normalized;
 }
 
@@ -169,9 +169,9 @@ function getCacheManifest_() {
   try {
     const cached = CacheService.getScriptCache().get(CACHE_MANIFEST_CACHE_KEY);
     if (cached) {
-      try { return normalizeCacheManifest_(JSON.parse(cached)); } catch (e) { }
+      try { return normalizeCacheManifest_(JSON.parse(cached)); } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
     }
-  } catch (e) { }
+  } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
 
   try {
     const raw = PropertiesService.getScriptProperties().getProperty(CACHE_MANIFEST_STORE_KEY);
@@ -179,10 +179,10 @@ function getCacheManifest_() {
       const parsed = normalizeCacheManifest_(JSON.parse(raw));
       try {
         CacheService.getScriptCache().put(CACHE_MANIFEST_CACHE_KEY, JSON.stringify(parsed), CACHE_MANIFEST_CACHE_TTL_SECONDS);
-      } catch (e) { }
+      } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
       return parsed;
     }
-  } catch (e) { }
+  } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
 
   return writeCacheManifest_(createDefaultCacheManifest_());
 }
@@ -466,7 +466,7 @@ function getSecret_(name, cfg) {
     const p = PropertiesService.getScriptProperties();
     const v = p.getProperty(k);
     if (v !== null && v !== undefined && String(v).trim() !== "") return String(v).trim();
-  } catch (e) {}
+  } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
   return String(getCfgFrom_(cfg || getSettingsMap_(), k) || "").trim();
 }
 
@@ -528,7 +528,7 @@ function createAdminSession_(sessionData) {
   CacheService.getScriptCache().put(ADMIN_SESSION_CACHE_PREFIX + token, serialized, ADMIN_SESSION_CACHE_TTL_SECONDS);
   try {
     PropertiesService.getScriptProperties().setProperty(ADMIN_SESSION_STORE_PREFIX + token, serialized);
-  } catch (e) {}
+  } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
   return {
     token: token,
     expires_at: session.expires_at,
@@ -541,10 +541,10 @@ function deleteAdminSession_(token) {
   if (!key) return false;
   try {
     CacheService.getScriptCache().remove(ADMIN_SESSION_CACHE_PREFIX + key);
-  } catch (e) {}
+  } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
   try {
     PropertiesService.getScriptProperties().deleteProperty(ADMIN_SESSION_STORE_PREFIX + key);
-  } catch (e) {}
+  } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
   return true;
 }
 
@@ -834,7 +834,7 @@ function fetchImageKitFiles_(privateKey, limit) {
     const code = res.getResponseCode();
     const text = res.getContentText();
     let data = null;
-    try { data = JSON.parse(text); } catch (e) {}
+    try { data = JSON.parse(text); } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
 
     if (code >= 200 && code < 300 && Array.isArray(data)) {
       return { ok: true, files: data };
@@ -1055,9 +1055,9 @@ function invalidateCaches_(keys) {
   try {
     const cache = CacheService.getScriptCache();
     (keys || []).forEach(k => {
-      try { cache.remove(String(k)); } catch (e) { }
+      try { cache.remove(String(k)); } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
     });
-  } catch (e) { }
+  } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
 }
 
 function referencesSyncLogs_(text) {
@@ -1139,7 +1139,7 @@ function captureFilePermissions_() {
     file.getViewers().forEach(function (user) {
       snapshot.push({ role: "viewer", email: normalizeEmailSafe_(user.getEmail()) });
     });
-  } catch (e) { }
+  } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
   return snapshot.filter(function (item) { return !!item.email; });
 }
 
@@ -1166,8 +1166,8 @@ function revokeFilePermissions_(options, report, dryRun) {
       if (!email || email === ownerEmail || keepList.indexOf(email) !== -1) return;
       report.permissions_revoked.push(email);
       if (dryRun) return;
-      try { file.removeEditor(email); } catch (e) { }
-      try { file.removeViewer(email); } catch (e) { }
+      try { file.removeEditor(email); } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
+      try { file.removeViewer(email); } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
     });
   } catch (e) {
     report.notes.push("Gagal memproses revokasi akses file: " + String(e));
@@ -1233,7 +1233,7 @@ function purgeSyncLogsArtifacts_(dryRun, options) {
     for (let i = 0; i < namedRanges.length; i++) {
       const nr = namedRanges[i];
       let targetSheet = "";
-      try { targetSheet = nr.getRange().getSheet().getName(); } catch (e) { }
+      try { targetSheet = nr.getRange().getSheet().getName(); } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
       const matched = referencesSyncLogs_(nr.getName()) || referencesSyncLogs_(targetSheet);
       if (!matched) continue;
       report.named_ranges_removed.push(nr.getName());
@@ -2092,7 +2092,7 @@ function updateSettings(d) {
   const propertyOnlyKeys = { ik_private_key: true };
   const props = PropertiesService.getScriptProperties();
   Object.keys(deprecatedKeys).forEach(function(key) {
-    try { props.deleteProperty(key); } catch (e) {}
+    try { props.deleteProperty(key); } catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
   });
   const rows = s.getDataRange().getValues();
   for (let i = rows.length - 1; i >= 1; i--) {
@@ -2215,13 +2215,13 @@ function pancinganIzin() {
   try {
     UrlFetchApp.fetch("https://google.com");
   } catch (e) {
-    // Ignore fetch errors
+    if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e);
   }
   Logger.log("Pancingan sukses! Izin berhasil di-refresh.");
 }
 
 /* =========================
-   AUTO-PAYMENT SYSTEM (MOOTA WEBHOOK)
+   AUTO-PAYMENT SYSTEM (LEGACY WEBHOOK REMOVED)
 ========================= */
 function forgotPassword(d) {
   try {
