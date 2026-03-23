@@ -201,10 +201,12 @@
                 }
 
                 if (!titles.length) {
-                    getTextFromSelectors([SEO_CONFIG.productTitleSelector], 5).forEach((title) => titles.push(title));
+                    const fallbackTitles = getTextFromSelectors([SEO_CONFIG.productTitleSelector], 5);
+                    for (let index = 0; index < fallbackTitles.length; index += 1) titles.push(fallbackTitles[index]);
                 }
                 if (!descriptions.length) {
-                    getTextFromSelectors([SEO_CONFIG.productDescriptionSelector], 5).forEach((description) => descriptions.push(description));
+                    const fallbackDescriptions = getTextFromSelectors([SEO_CONFIG.productDescriptionSelector], 5);
+                    for (let index = 0; index < fallbackDescriptions.length; index += 1) descriptions.push(fallbackDescriptions[index]);
                 }
                 if (!images.length) {
                     try {
@@ -214,7 +216,9 @@
                             if (src) images.push(src);
                             if (images.length >= 5) break;
                         }
-                    } catch (error) {}
+                    } catch (error) {
+                        if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', error);
+                    }
                 }
 
                 return {
@@ -283,7 +287,8 @@
                     }, defaults || {}));
                 };
 
-                productSignals.images.slice(0, 3).forEach((url) => pushCandidate(url, 'product'));
+                const productImages = productSignals.images.slice(0, 3);
+                for (let index = 0; index < productImages.length; index += 1) pushCandidate(productImages[index], 'product');
                 pushCandidate(settings && settings.site_logo, 'brand-logo');
                 pushCandidate(SEO_CONFIG.defaultOgImagePath, 'fallback', {
                     type: SEO_CONFIG.defaultOgImageType,
@@ -659,10 +664,17 @@
                 <i id="logo-fallback" data-lucide="layers" class="w-8 h-8 text-indigo-600 flex-shrink-0 transition-transform hover:rotate-12"></i>
                 <strong class="dyn-site-name text-lg md:text-2xl font-black text-indigo-600 tracking-tighter uppercase truncate block">KELAS JAGOAN</strong>
             </div>
-            <a href="login.html" class="flex-shrink-0 bg-indigo-600 text-white px-5 py-3 md:px-6 md:py-3 rounded-full font-bold text-sm shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:shadow-indigo-300 hover:-translate-y-0.5 transition-all flex items-center gap-2 group whitespace-nowrap">
-                <span>Login</span>
-                <i data-lucide="arrow-right" class="w-4 h-4 group-hover:translate-x-1 transition-transform"></i>
-            </a>
+            <div class="flex-shrink-0 flex items-center gap-2 sm:gap-3">
+                <a href="cart.html" class="relative inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-slate-600 shadow-sm hover:border-indigo-200 hover:text-indigo-600 transition-colors whitespace-nowrap">
+                    <i data-lucide="shopping-cart" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline">Keranjang</span>
+                    <span id="cart-counter" class="hidden min-w-[1.3rem] h-[1.3rem] rounded-full bg-indigo-600 px-1 text-[10px] font-black leading-[1.3rem] text-center text-white">0</span>
+                </a>
+                <a href="login.html" class="bg-indigo-600 text-white px-5 py-3 md:px-6 md:py-3 rounded-full font-bold text-sm shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:shadow-indigo-300 hover:-translate-y-0.5 transition-all flex items-center gap-2 group whitespace-nowrap">
+                    <span>Login</span>
+                    <i data-lucide="arrow-right" class="w-4 h-4 group-hover:translate-x-1 transition-transform"></i>
+                </a>
+            </div>
         </div>
     </header>
 
@@ -747,10 +759,11 @@
         const PUBLIC_SYNC_SIGNAL_KEY = 'cepat_public_sync_signal';
         const PUBLIC_SYNC_CHANNEL = 'cepat_public_sync_channel';
         const DEFAULT_CATALOG_PRODUCT_DESCRIPTION = 'Spesifikasi jelas, panduan penggunaan singkat, dan pengiriman aman untuk membantu Anda belanja dengan lebih yakin';
+        const CATALOG_CONTROL_CHAR_RE = new RegExp('[\\u0000-\\u001F\\u007F-\\u009F\\u200B-\\u200D\\uFEFF]', 'g');
 
         function normalizeCatalogText(value) {
             return String(value || '')
-                .replace(/[\u0000-\u001F\u007F-\u009F\u200B-\u200D\uFEFF]/g, ' ')
+                .replace(CATALOG_CONTROL_CHAR_RE, ' ')
                 .replace(/\s+/g, ' ')
                 .trim();
         }
@@ -819,6 +832,72 @@
             }
         }
 
+        function syncCartCounter() {
+            const counter = document.getElementById('cart-counter');
+            if (!counter) return;
+            const cartApi = window.CEPAT_CART;
+            const count = cartApi && typeof cartApi.getCount === 'function' ? Number(cartApi.getCount() || 0) : 0;
+            if (count > 0) {
+                counter.textContent = count > 99 ? '99+' : String(count);
+                counter.classList.remove('hidden');
+            } else {
+                counter.textContent = '0';
+                counter.classList.add('hidden');
+            }
+        }
+
+        function showCatalogNotice(message, type) {
+            let root = document.getElementById('catalog-toast-root');
+            if (!root) {
+                root = document.createElement('div');
+                root.id = 'catalog-toast-root';
+                root.className = 'fixed bottom-4 right-4 z-[80] flex w-[min(92vw,22rem)] flex-col gap-2 pointer-events-none';
+                document.body.appendChild(root);
+            }
+            const tones = {
+                success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+                warning: 'border-amber-200 bg-amber-50 text-amber-700',
+                error: 'border-rose-200 bg-rose-50 text-rose-700',
+                info: 'border-slate-200 bg-white text-slate-700'
+            };
+            const item = document.createElement('div');
+            item.className = 'pointer-events-auto rounded-2xl border px-4 py-3 text-xs font-bold shadow-lg ' + (tones[type] || tones.info);
+            item.textContent = String(message || 'Perubahan tersimpan di keranjang.');
+            root.appendChild(item);
+            setTimeout(function () { item.remove(); }, 2600);
+        }
+
+        function attachCatalogCartHandlers(products) {
+            const cartApi = window.CEPAT_CART;
+            const map = new Map((Array.isArray(products) ? products : []).map(function (p) {
+                return [String((p && p.id) || ''), p || {}];
+            }));
+
+            document.querySelectorAll('[data-add-to-cart-id]').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    const productId = String(btn.getAttribute('data-add-to-cart-id') || '');
+                    const product = map.get(productId);
+                    if (!product) {
+                        showCatalogNotice('Produk tidak valid. Muat ulang katalog.', 'error');
+                        return;
+                    }
+                    if (!cartApi || typeof cartApi.addItem !== 'function') {
+                        showCatalogNotice('Fitur keranjang belum siap di browser ini.', 'warning');
+                        return;
+                    }
+
+                    const result = cartApi.addItem(product, 1);
+                    if (result && result.ok) {
+                        syncCartCounter();
+                        showCatalogNotice('Produk berhasil ditambahkan ke keranjang.', 'success');
+                        return;
+                    }
+
+                    showCatalogNotice((result && result.message) || 'Gagal menambahkan produk ke keranjang.', 'warning');
+                });
+            });
+        }
+
         // Fungsi Render HTML Produk
         function renderCatalog(products) {
             const container = document.getElementById('public-products');
@@ -870,13 +949,18 @@
                                 <span class="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-500">Siap Kirim</span>
                             </div>
 
-                            <div class="grid grid-cols-2 gap-2">
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                                 <a href="${escapeHtml(detailUrl)}"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     class="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-3 text-xs font-bold text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-colors">
                                     Detail
                                 </a>
+                                <button type="button"
+                                    data-add-to-cart-id="${escapeHtml(String((p && p.id) || ''))}"
+                                    class="inline-flex items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 px-3 py-3 text-xs font-bold text-indigo-700 hover:border-indigo-300 hover:bg-indigo-100 transition-colors">
+                                    Add to Cart
+                                </button>
                                 <a href="${escapeHtml(checkoutUrl)}"
                                     class="inline-flex items-center justify-center rounded-full bg-indigo-600 px-3 py-3 text-xs font-bold text-white shadow-sm shadow-indigo-200 hover:bg-indigo-700 transition-colors">
                                     Checkout
@@ -889,6 +973,8 @@
             }).join('');
             
             lucide.createIcons();
+            attachCatalogCartHandlers(products);
+            syncCartCounter();
             if (window.CEPAT_SEO && typeof window.CEPAT_SEO.sync === 'function') {
                 window.CEPAT_SEO.sync({ products: products, reason: 'catalog-render' });
             }
@@ -991,6 +1077,13 @@
         
         window.onload = () => { 
             lucide.createIcons(); 
+            syncCartCounter();
+            if (!window.__CEPAT_CART_COUNTER_BOUND__) {
+                window.__CEPAT_CART_COUNTER_BOUND__ = true;
+                window.addEventListener('cepat:cart:changed', function () {
+                    syncCartCounter();
+                });
+            }
             setupRealtimeCatalogSync();
             loadPublicCatalog(); 
             if (window.CEPAT_CACHE && typeof window.CEPAT_CACHE.watchManifest === 'function' && !window.__CEPAT_PUBLIC_CATALOG_WATCH__) {

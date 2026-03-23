@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Keranjang Belanja - CepatCuan</title>
+    <meta name="description" content="Kelola keranjang belanja Anda, atur kuantitas produk, dan lanjutkan checkout dengan mudah." />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="site.config.js"></script>
+    <script src="config.js?v=2026_2"></script>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen antialiased">
+    <header class="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
+        <div class="mx-auto max-w-6xl px-4 py-3 md:px-6 flex items-center justify-between gap-3">
+            <a href="index.html" class="inline-flex items-center gap-2 text-xs font-black uppercase tracking-[0.14em] text-slate-500 hover:text-indigo-600 transition-colors">
+                <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                Kembali ke katalog
+            </a>
+            <div class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-black uppercase tracking-[0.14em] text-slate-600">
+                <i data-lucide="shopping-cart" class="w-4 h-4"></i>
+                <span>Keranjang</span>
+                <span id="cart-counter" class="min-w-[1.3rem] h-[1.3rem] rounded-full bg-indigo-600 px-1 text-[10px] font-black leading-[1.3rem] text-center text-white">0</span>
+            </div>
+        </div>
+    </header>
+
+    <main class="mx-auto max-w-6xl px-4 py-6 md:px-6 md:py-8">
+        <div class="mb-6 md:mb-8">
+            <h1 class="text-2xl md:text-3xl font-black tracking-tight text-slate-900">Keranjang Belanja</h1>
+            <p class="mt-2 text-sm md:text-base text-slate-500">Tambah, kurangi, atau hapus produk sebelum checkout.</p>
+        </div>
+
+        <div class="grid gap-6 lg:grid-cols-[1.7fr_1fr]">
+            <section class="rounded-3xl border border-slate-200 bg-white p-4 md:p-6 shadow-sm">
+                <div id="cart-items" class="space-y-3"></div>
+            </section>
+
+            <aside class="rounded-3xl border border-slate-200 bg-white p-5 md:p-6 shadow-sm h-fit sticky top-24">
+                <h2 class="text-sm font-black uppercase tracking-[0.16em] text-slate-500">Ringkasan</h2>
+                <div class="mt-4 space-y-3 text-sm">
+                    <div class="flex items-center justify-between">
+                        <span class="text-slate-500">Total item</span>
+                        <span id="summary-count" class="font-bold text-slate-800">0</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-slate-500">Subtotal</span>
+                        <span id="summary-subtotal" class="font-bold text-slate-800">Rp 0</span>
+                    </div>
+                    <div class="h-px bg-slate-100"></div>
+                    <div class="flex items-center justify-between text-base">
+                        <span class="font-black text-slate-800">Total</span>
+                        <span id="summary-total" class="font-black text-indigo-700">Rp 0</span>
+                    </div>
+                </div>
+
+                <div class="mt-5 grid gap-2">
+                    <button id="checkout-btn" type="button" class="inline-flex items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-black text-white shadow-sm shadow-indigo-200 hover:bg-indigo-700 transition-colors disabled:cursor-not-allowed disabled:bg-slate-300">
+                        <i data-lucide="credit-card" class="w-4 h-4"></i>
+                        Checkout
+                    </button>
+                    <button id="clear-cart-btn" type="button" class="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-colors">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        Kosongkan keranjang
+                    </button>
+                </div>
+                <p class="mt-3 text-[11px] leading-relaxed text-slate-400">Data keranjang tersimpan otomatis di browser Anda.</p>
+            </aside>
+        </div>
+    </main>
+
+    <script>
+        (function () {
+            const cartApi = window.CEPAT_CART;
+            const checkoutPayloadKey = (cartApi && cartApi.checkoutPayloadKey) || 'cepat_cart_checkout_payload_v1';
+
+            function formatCurrency(value) {
+                return 'Rp ' + Number(value || 0).toLocaleString('id-ID');
+            }
+
+            function escapeHtml(value) {
+                return String(value == null ? '' : value)
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#039;');
+            }
+
+            function showToast(message, type) {
+                let root = document.getElementById('cart-toast-root');
+                if (!root) {
+                    root = document.createElement('div');
+                    root.id = 'cart-toast-root';
+                    root.className = 'fixed bottom-4 right-4 z-[80] flex w-[min(92vw,22rem)] flex-col gap-2 pointer-events-none';
+                    document.body.appendChild(root);
+                }
+
+                const tones = {
+                    success: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+                    warning: 'border-amber-200 bg-amber-50 text-amber-700',
+                    error: 'border-rose-200 bg-rose-50 text-rose-700',
+                    info: 'border-slate-200 bg-white text-slate-700'
+                };
+
+                const item = document.createElement('div');
+                item.className = 'pointer-events-auto rounded-2xl border px-4 py-3 text-xs font-bold shadow-lg ' + (tones[type] || tones.info);
+                item.textContent = String(message || 'Perubahan disimpan.');
+                root.appendChild(item);
+                setTimeout(function () { item.remove(); }, 2800);
+            }
+
+            function getItems() {
+                if (!cartApi || typeof cartApi.getItems !== 'function') return [];
+                return cartApi.getItems();
+            }
+
+            function getCount() {
+                if (!cartApi || typeof cartApi.getCount !== 'function') return 0;
+                return Number(cartApi.getCount() || 0);
+            }
+
+            function getTotal() {
+                if (!cartApi || typeof cartApi.getTotal !== 'function') return 0;
+                return Number(cartApi.getTotal() || 0);
+            }
+
+            function syncCounter() {
+                const el = document.getElementById('cart-counter');
+                if (!el) return;
+                const count = getCount();
+                el.textContent = count > 99 ? '99+' : String(count);
+            }
+
+            function renderSummary() {
+                const count = getCount();
+                const total = getTotal();
+                document.getElementById('summary-count').textContent = String(count);
+                document.getElementById('summary-subtotal').textContent = formatCurrency(total);
+                document.getElementById('summary-total').textContent = formatCurrency(total);
+                document.getElementById('checkout-btn').disabled = count <= 0;
+                document.getElementById('clear-cart-btn').disabled = count <= 0;
+            }
+
+            function renderItems() {
+                const root = document.getElementById('cart-items');
+                if (!root) return;
+
+                const items = getItems();
+                if (!items.length) {
+                    root.innerHTML = `
+                        <div class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-6 py-12 text-center">
+                            <div class="mx-auto mb-4 inline-flex h-12 w-12 items-center justify-center rounded-full bg-white text-slate-400">
+                                <i data-lucide="shopping-bag" class="w-5 h-5"></i>
+                            </div>
+                            <h3 class="text-base font-black text-slate-800">Keranjang masih kosong</h3>
+                            <p class="mt-1 text-sm text-slate-500">Tambahkan produk dari katalog untuk memulai checkout.</p>
+                            <a href="index.html" class="mt-4 inline-flex items-center justify-center rounded-xl bg-indigo-600 px-4 py-2 text-xs font-black text-white hover:bg-indigo-700 transition-colors">Lihat produk</a>
+                        </div>
+                    `;
+                    lucide.createIcons();
+                    return;
+                }
+
+                root.innerHTML = items.map(function (item) {
+                    const subtotal = (Number(item.price) || 0) * (Number(item.qty) || 0);
+                    const stockText = item.stock === null || item.stock === undefined
+                        ? 'Stok fleksibel'
+                        : ('Stok tersedia: ' + item.stock);
+                    const detailUrl = String(item.lp_url || item.url || ('checkout.html?id=' + encodeURIComponent(item.id || '')));
+
+                    return `
+                        <article class="rounded-2xl border border-slate-200 bg-white p-4 md:p-5">
+                            <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                                <div class="flex items-start gap-3 min-w-0">
+                                    <div class="h-14 w-14 flex-shrink-0 overflow-hidden rounded-xl bg-slate-100">
+                                        ${item.image_url
+                                            ? `<img src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.title)}" class="h-full w-full object-cover" loading="lazy">`
+                                            : '<div class="h-full w-full flex items-center justify-center text-slate-300"><i data-lucide="package" class="w-4 h-4"></i></div>'}
+                                    </div>
+                                    <div class="min-w-0">
+                                        <h3 class="truncate text-sm font-black text-slate-900">${escapeHtml(item.title)}</h3>
+                                        <p class="mt-1 text-xs text-slate-500">${stockText}</p>
+                                        <p class="mt-1 text-xs font-bold text-slate-700">${formatCurrency(item.price)}</p>
+                                        <a href="${escapeHtml(detailUrl)}" target="_blank" rel="noopener noreferrer" class="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-700">
+                                            Lihat detail
+                                            <i data-lucide="external-link" class="w-3 h-3"></i>
+                                        </a>
+                                    </div>
+                                </div>
+
+                                <div class="flex flex-col gap-2 sm:items-end">
+                                    <div class="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 p-1">
+                                        <button data-cart-action="decrease" data-cart-id="${escapeHtml(item.id)}" class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-white hover:text-slate-700">-</button>
+                                        <input data-cart-qty="${escapeHtml(item.id)}" type="number" min="1" ${item.stock != null ? ('max="' + escapeHtml(item.stock) + '"') : ''} value="${escapeHtml(item.qty)}" class="h-8 w-14 rounded-lg border-0 bg-transparent text-center text-sm font-black text-slate-800 focus:ring-0" />
+                                        <button data-cart-action="increase" data-cart-id="${escapeHtml(item.id)}" class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-white hover:text-slate-700">+</button>
+                                    </div>
+                                    <div class="text-xs font-black text-slate-900">Subtotal: ${formatCurrency(subtotal)}</div>
+                                    <button data-cart-action="remove" data-cart-id="${escapeHtml(item.id)}" class="inline-flex items-center gap-1 text-[11px] font-bold text-rose-600 hover:text-rose-700">
+                                        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                                        Hapus
+                                    </button>
+                                </div>
+                            </div>
+                        </article>
+                    `;
+                }).join('');
+
+                lucide.createIcons();
+            }
+
+            function rerender() {
+                syncCounter();
+                renderItems();
+                renderSummary();
+            }
+
+            function updateItemQty(id, nextQty) {
+                if (!cartApi || typeof cartApi.updateQuantity !== 'function') return;
+                const result = cartApi.updateQuantity(id, nextQty);
+                if (!result || !result.ok) {
+                    showToast((result && result.message) || 'Tidak dapat memperbarui jumlah item.', 'warning');
+                }
+                rerender();
+            }
+
+            document.getElementById('cart-items').addEventListener('click', function (event) {
+                const button = event.target.closest('[data-cart-action]');
+                if (!button) return;
+
+                const action = button.getAttribute('data-cart-action');
+                const id = String(button.getAttribute('data-cart-id') || '');
+                if (!id || !cartApi) return;
+
+                const items = getItems();
+                const current = items.find(function (item) { return String(item.id) === id; });
+                const currentQty = Math.max(1, Math.floor(Number(current && current.qty) || 1));
+
+                if (action === 'increase') {
+                    updateItemQty(id, currentQty + 1);
+                } else if (action === 'decrease') {
+                    updateItemQty(id, currentQty - 1);
+                } else if (action === 'remove') {
+                    const result = cartApi.removeItem(id);
+                    if (!result || !result.ok) {
+                        showToast((result && result.message) || 'Tidak dapat menghapus item.', 'warning');
+                    } else {
+                        showToast('Item dihapus dari keranjang.', 'info');
+                    }
+                    rerender();
+                }
+            });
+
+            document.getElementById('cart-items').addEventListener('change', function (event) {
+                const input = event.target.closest('[data-cart-qty]');
+                if (!input || !cartApi) return;
+                const id = String(input.getAttribute('data-cart-qty') || '');
+                const nextQty = Math.floor(Number(input.value) || 1);
+                updateItemQty(id, nextQty);
+            });
+
+            document.getElementById('clear-cart-btn').addEventListener('click', function () {
+                if (!cartApi || typeof cartApi.clear !== 'function') return;
+                cartApi.clear();
+                showToast('Keranjang dikosongkan.', 'info');
+                rerender();
+            });
+
+            document.getElementById('checkout-btn').addEventListener('click', function () {
+                if (!cartApi || typeof cartApi.buildCheckoutPayload !== 'function') {
+                    showToast('Fitur checkout keranjang belum tersedia.', 'warning');
+                    return;
+                }
+
+                const payload = cartApi.buildCheckoutPayload();
+                if (!payload || !Array.isArray(payload.items) || !payload.items.length) {
+                    showToast('Keranjang masih kosong.', 'warning');
+                    return;
+                }
+
+                try {
+                    sessionStorage.setItem(checkoutPayloadKey, JSON.stringify(payload));
+                    window.location.href = 'checkout.html?cart=1';
+                } catch (e) {
+                    showToast('Gagal menyiapkan data checkout. Coba lagi.', 'error');
+                }
+            });
+
+            if (window.CEPAT_CART && typeof window.CEPAT_CART.subscribe === 'function') {
+                window.CEPAT_CART.subscribe(function () {
+                    rerender();
+                });
+            }
+            window.addEventListener('cepat:cart:changed', rerender);
+
+            rerender();
+            lucide.createIcons();
+        })();
+    </script>
+</body>
+</html>

@@ -806,6 +806,292 @@
         console.error('[Config] Failed to initialize configuration');
     }
 
+    (function initCartModule() {
+        try {
+            var CART_KEY = 'cepat_cart_v1';
+            var CART_EVENT = 'cepat:cart:changed';
+            var CART_BROADCAST = 'cepat_cart_channel_v1';
+            var checkoutPayloadKey = 'cepat_cart_checkout_payload_v1';
+            var channel = null;
+
+            function clone(value) {
+                try {
+                    return JSON.parse(JSON.stringify(value));
+                } catch (e) {
+                    if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e);
+                    return null;
+                }
+            }
+
+            function normalizeId(raw) {
+                var value = String(raw == null ? '' : raw).trim();
+                return value;
+            }
+
+            function normalizePositiveNumber(raw, fallback) {
+                var n = Number(raw);
+                if (!Number.isFinite(n) || n <= 0) return Number(fallback || 0);
+                return n;
+            }
+
+            function normalizeStock(raw) {
+                if (raw === null || raw === undefined || raw === '') return null;
+                var cleaned = String(raw).replace(/[^0-9.,-]/g, '').replace(',', '.').trim();
+                if (!cleaned) return null;
+                var stock = Number(cleaned);
+                if (!Number.isFinite(stock) || stock < 0) return null;
+                return Math.floor(stock);
+            }
+
+            function normalizeItem(raw) {
+                var item = raw && typeof raw === 'object' ? raw : {};
+                var id = normalizeId(item.id || item.product_id);
+                if (!id) return null;
+
+                var title = String(item.title || item.nama_produk || 'Produk').trim();
+                if (!title) title = 'Produk';
+
+                var qty = Math.max(1, Math.floor(normalizePositiveNumber(item.qty || item.quantity || 1, 1)));
+                var price = normalizePositiveNumber(item.price || item.harga || item.harga_satuan || 0, 0);
+                var stock = normalizeStock(item.stock != null ? item.stock : (item.stok != null ? item.stok : item.available_stock));
+
+                return {
+                    id: id,
+                    title: title,
+                    price: price,
+                    qty: qty,
+                    stock: stock,
+                    image_url: String(item.image_url || item.image || '').trim(),
+                    lp_url: String(item.lp_url || item.url || '').trim(),
+                    desc: String(item.desc || '').trim(),
+                    updated_at: Date.now()
+                };
+            }
+
+            function readState() {
+                try {
+                    var raw = localStorage.getItem(CART_KEY);
+                    if (!raw) return { items: [], updated_at: Date.now() };
+                    var parsed = JSON.parse(raw);
+                    var items = Array.isArray(parsed && parsed.items) ? parsed.items.map(normalizeItem).filter(Boolean) : [];
+                    return {
+                        items: items,
+                        updated_at: Number(parsed && parsed.updated_at) || Date.now()
+                    };
+                } catch (e) {
+                    if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e);
+                    return { items: [], updated_at: Date.now() };
+                }
+            }
+
+            function writeState(state) {
+                var next = {
+                    items: Array.isArray(state && state.items) ? state.items.map(normalizeItem).filter(Boolean) : [],
+                    updated_at: Date.now()
+                };
+                try {
+                    localStorage.setItem(CART_KEY, JSON.stringify(next));
+                } catch (e) {
+                    if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e);
+                }
+                return next;
+            }
+
+            function dispatchChange(reason, state) {
+                var payload = {
+                    reason: String(reason || 'update'),
+                    state: clone(state) || { items: [], updated_at: Date.now() }
+                };
+
+                try {
+                    window.dispatchEvent(new CustomEvent(CART_EVENT, { detail: payload }));
+                } catch (e) {
+                    if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e);
+                }
+
+                if (channel && typeof channel.postMessage === 'function' && payload.reason !== 'broadcast-sync') {
+                    try {
+                        channel.postMessage({ type: 'cart-change', reason: payload.reason, at: Date.now() });
+                    } catch (e) {
+                        if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e);
+                    }
+                }
+            }
+
+            function getCountFromItems(items) {
+                return (Array.isArray(items) ? items : []).reduce(function (sum, item) {
+                    return sum + Math.max(0, Math.floor(Number(item && item.qty) || 0));
+                }, 0);
+            }
+
+            function getTotalFromItems(items) {
+                return (Array.isArray(items) ? items : []).reduce(function (sum, item) {
+                    var qty = Math.max(0, Math.floor(Number(item && item.qty) || 0));
+                    var price = Number(item && item.price) || 0;
+                    return sum + (qty * price);
+                }, 0);
+            }
+
+            function findItemIndex(items, productId) {
+                var id = normalizeId(productId);
+                if (!id) return -1;
+                return items.findIndex(function (item) { return normalizeId(item && item.id) === id; });
+            }
+
+            function ensureStockAllowed(item, requestedQty) {
+                var maxStock = normalizeStock(item && item.stock);
+                if (maxStock === null) return { ok: true };
+                if (maxStock <= 0) return { ok: false, message: 'Stok produk habis.' };
+                if (requestedQty > maxStock) {
+                    return {
+                        ok: false,
+                        message: 'Jumlah melebihi stok tersedia (' + maxStock + ').'
+                    };
+                }
+                return { ok: true };
+            }
+
+            var cartApi = {
+                storageKey: CART_KEY,
+                checkoutPayloadKey: checkoutPayloadKey,
+                eventName: CART_EVENT,
+                getState: function () {
+                    return clone(readState()) || { items: [], updated_at: Date.now() };
+                },
+                getItems: function () {
+                    var state = readState();
+                    return clone(state.items) || [];
+                },
+                getCount: function () {
+                    return getCountFromItems(readState().items);
+                },
+                getTotal: function () {
+                    return getTotalFromItems(readState().items);
+                },
+                addItem: function (product, qty) {
+                    var normalized = normalizeItem(Object.assign({}, product || {}, { qty: normalizePositiveNumber(qty || 1, 1) }));
+                    if (!normalized) return { ok: false, message: 'Produk tidak valid.' };
+
+                    var state = readState();
+                    var items = state.items.slice();
+                    var idx = findItemIndex(items, normalized.id);
+                    var nextQty = normalized.qty;
+
+                    if (idx >= 0) {
+                        var current = items[idx];
+                        nextQty = Math.max(1, Math.floor(Number(current.qty) || 1) + normalized.qty);
+                        normalized = Object.assign({}, current, normalized, { qty: nextQty });
+                    }
+
+                    var stockCheck = ensureStockAllowed(normalized, nextQty);
+                    if (!stockCheck.ok) return { ok: false, message: stockCheck.message };
+
+                    if (idx >= 0) items[idx] = normalized;
+                    else items.push(normalized);
+
+                    var next = writeState({ items: items });
+                    dispatchChange('add-item', next);
+                    return { ok: true, item: clone(normalized), state: clone(next) };
+                },
+                updateQuantity: function (productId, qty) {
+                    var state = readState();
+                    var items = state.items.slice();
+                    var idx = findItemIndex(items, productId);
+                    if (idx < 0) return { ok: false, message: 'Item tidak ditemukan.' };
+
+                    var nextQty = Math.floor(Number(qty));
+                    if (!Number.isFinite(nextQty)) nextQty = 1;
+
+                    if (nextQty <= 0) {
+                        items.splice(idx, 1);
+                        var removedState = writeState({ items: items });
+                        dispatchChange('remove-item', removedState);
+                        return { ok: true, removed: true, state: clone(removedState) };
+                    }
+
+                    var current = Object.assign({}, items[idx], { qty: nextQty });
+                    var stockCheck = ensureStockAllowed(current, nextQty);
+                    if (!stockCheck.ok) return { ok: false, message: stockCheck.message };
+
+                    items[idx] = current;
+                    var next = writeState({ items: items });
+                    dispatchChange('update-qty', next);
+                    return { ok: true, item: clone(current), state: clone(next) };
+                },
+                removeItem: function (productId) {
+                    var state = readState();
+                    var items = state.items.slice();
+                    var idx = findItemIndex(items, productId);
+                    if (idx < 0) return { ok: false, message: 'Item tidak ditemukan.' };
+                    items.splice(idx, 1);
+                    var next = writeState({ items: items });
+                    dispatchChange('remove-item', next);
+                    return { ok: true, state: clone(next) };
+                },
+                clear: function () {
+                    var next = writeState({ items: [] });
+                    dispatchChange('clear', next);
+                    return { ok: true, state: clone(next) };
+                },
+                subscribe: function (listener) {
+                    if (typeof listener !== 'function') return function () {};
+                    var handler = function (event) {
+                        listener(event && event.detail ? event.detail : { state: readState(), reason: 'event' });
+                    };
+                    window.addEventListener(CART_EVENT, handler);
+                    return function () {
+                        window.removeEventListener(CART_EVENT, handler);
+                    };
+                },
+                buildCheckoutPayload: function () {
+                    var state = readState();
+                    var items = state.items.slice();
+                    var totalQty = getCountFromItems(items);
+                    var totalPrice = getTotalFromItems(items);
+                    return {
+                        items: clone(items) || [],
+                        item_count: items.length,
+                        total_qty: totalQty,
+                        total_price: totalPrice,
+                        detail: items.map(function (item) {
+                            var subtotal = (Number(item.price) || 0) * (Number(item.qty) || 0);
+                            return {
+                                id: item.id,
+                                title: item.title,
+                                qty: item.qty,
+                                price: item.price,
+                                subtotal: subtotal
+                            };
+                        }),
+                        created_at: Date.now()
+                    };
+                }
+            };
+
+            window.CEPAT_CART = cartApi;
+
+            if (typeof BroadcastChannel === 'function') {
+                try {
+                    channel = new BroadcastChannel(CART_BROADCAST);
+                    channel.onmessage = function (event) {
+                        if (!event || !event.data || event.data.type !== 'cart-change') return;
+                        dispatchChange('broadcast-sync', readState());
+                    };
+                } catch (e) {
+                    channel = null;
+                    if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e);
+                }
+            }
+
+            window.addEventListener('storage', function (event) {
+                if (!event || event.key !== CART_KEY) return;
+                dispatchChange('storage-sync', readState());
+            });
+        } catch (e) {
+            if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e);
+        }
+    })();
+
     // --- CLEANUP: Remove decode function references ---
     _0xCFG = null;
 })();
