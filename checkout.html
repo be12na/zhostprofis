@@ -345,13 +345,13 @@
                                 </div>
                             </section>
 
-                            <section class="rounded-[1.6rem] border border-slate-200 bg-white p-5">
+                            <section id="qty-section" class="rounded-[1.6rem] border border-slate-200 bg-white p-5">
                                 <div class="mb-5 flex items-center justify-between gap-4">
                                     <div>
                                         <p class="text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500">Ringkas & Praktis</p>
-                                        <h3 class="mt-2 text-lg font-extrabold text-slate-900">Atur jumlah pembelian</h3>
+                                        <h3 class="qty-heading mt-2 text-lg font-extrabold text-slate-900">Atur jumlah pembelian</h3>
                                     </div>
-                                    <span class="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500">Update realtime</span>
+                                    <span class="qty-mode-pill rounded-full bg-slate-100 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.15em] text-slate-500">Update realtime</span>
                                 </div>
 
                                 <div class="grid gap-5 sm:grid-cols-[0.9fr,1.1fr]">
@@ -459,11 +459,13 @@
 
         const urlParams = new URLSearchParams(window.location.search);
         const productId = urlParams.get('id');
+        const cartMode = urlParams.get('cart') === '1';
         const productCacheKey = productId ? ('cepat_product_' + productId) : '';
         const productCacheAge = 5 * 60 * 1000;
         const RETURNING_PROFILE_KEY = 'cepat_checkout_customer_profile_v2';
         const RETURNING_PROFILE_MAX_AGE = 90 * 24 * 60 * 60 * 1000;
         const LAST_ORDER_KEY = 'cepat_last_physical_order';
+        const CART_CHECKOUT_KEY = 'cepat_cart_checkout_payload_v1';
 
         const state = {
             settings: {},
@@ -471,7 +473,9 @@
             payment: {},
             redirectUrl: '',
             whatsappMessage: '',
-            loading: false
+            loading: false,
+            cartMode: cartMode,
+            cartPayload: null
         };
 
         function refreshIcons(root) {
@@ -536,6 +540,87 @@
                 + ' | Harga: ' + formatCurrency(getPrice());
         }
 
+        function getCartCheckoutKey() {
+            const cartApi = window.CEPAT_CART;
+            return (cartApi && cartApi.checkoutPayloadKey) || CART_CHECKOUT_KEY;
+        }
+
+        function setQtyControlsEnabled(enabled) {
+            document.querySelectorAll('[data-qty-adjust]').forEach(function(button) {
+                button.disabled = !enabled;
+            });
+            const qtyInput = document.getElementById('order-qty');
+            if (qtyInput) qtyInput.disabled = !enabled;
+        }
+
+        function parseCartPayloadFromSession() {
+            try {
+                const raw = sessionStorage.getItem(getCartCheckoutKey());
+                const parsed = parseJsonSafe(raw);
+                if (!parsed || !Array.isArray(parsed.items) || !parsed.items.length) return null;
+                const items = parsed.items
+                    .map(function(item) {
+                        const qty = Math.max(1, Math.floor(Number(item && item.qty) || 1));
+                        const price = Number(item && item.price) || 0;
+                        const subtotal = qty * price;
+                        return {
+                            id: String((item && item.id) || '').trim(),
+                            title: String((item && item.title) || 'Produk').trim() || 'Produk',
+                            qty: qty,
+                            price: price,
+                            subtotal: subtotal
+                        };
+                    })
+                    .filter(function(item) { return !!item.id; });
+                if (!items.length) return null;
+                const totalQty = items.reduce(function(sum, item) { return sum + item.qty; }, 0);
+                const totalPrice = items.reduce(function(sum, item) { return sum + item.subtotal; }, 0);
+                return {
+                    items: items,
+                    item_count: items.length,
+                    total_qty: totalQty,
+                    total_price: totalPrice
+                };
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function applyCartMode(payload) {
+            if (!payload || !Array.isArray(payload.items) || !payload.items.length) return false;
+            state.cartMode = true;
+            state.cartPayload = payload;
+
+            const title = 'Keranjang Belanja (' + payload.item_count + ' item)';
+            const desc = 'Checkout multi-produk dari keranjang Anda.';
+
+            state.product = {
+                id: 'cart_bundle',
+                title: title,
+                harga: Number(payload.total_price || 0),
+                desc: desc
+            };
+
+            document.getElementById('prod-id').value = 'cart_bundle';
+            document.getElementById('prod-title').value = title;
+            document.getElementById('prod-price').value = Number(payload.total_price || 0);
+            document.getElementById('prod-desc').value = desc;
+            document.getElementById('order-qty').value = String(Math.max(1, Math.floor(Number(payload.total_qty) || 1)));
+
+            const qtySection = document.getElementById('qty-section');
+            if (qtySection) {
+                const badge = qtySection.querySelector('.qty-mode-pill');
+                if (badge) badge.textContent = 'Mode keranjang';
+                const heading = qtySection.querySelector('.qty-heading');
+                if (heading) heading.textContent = 'Jumlah item dari keranjang';
+            }
+
+            setQtyControlsEnabled(false);
+            setProductStatus('Keranjang siap di-checkout', 'ready');
+            syncSummary();
+            return true;
+        }
+
         function setProductStatus(label, tone) {
             const el = document.getElementById('product-status-pill');
             const tones = {
@@ -552,20 +637,31 @@
             const desc = document.getElementById('prod-desc').value || 'Detail produk akan langsung diteruskan ke admin melalui WhatsApp.';
             const qty = getQty();
             const price = getPrice();
-            const total = qty * price;
+            const total = state.cartMode && state.cartPayload
+                ? Number(state.cartPayload.total_price || 0)
+                : (qty * price);
             const initial = String(title || 'P').trim().charAt(0).toUpperCase() || 'P';
 
             document.getElementById('summary-avatar').textContent = initial;
             document.getElementById('summary-product-name').textContent = title;
             document.getElementById('summary-product-desc').textContent = desc;
-            document.getElementById('order-detail-line').textContent = 'Produk: ' + title;
-            document.getElementById('order-qty-line').textContent = 'Jumlah: ' + qty + ' - Total: ' + formatCurrency(total);
+            document.getElementById('order-detail-line').textContent = state.cartMode && state.cartPayload
+                ? ('Produk: ' + state.cartPayload.item_count + ' item dari keranjang')
+                : ('Produk: ' + title);
+            document.getElementById('order-qty-line').textContent = state.cartMode && state.cartPayload
+                ? ('Jumlah item: ' + state.cartPayload.total_qty + ' - Total: ' + formatCurrency(total))
+                : ('Jumlah: ' + qty + ' - Total: ' + formatCurrency(total));
             document.getElementById('summary-qty').textContent = String(qty);
-            document.getElementById('summary-price').textContent = formatCurrency(price);
+            document.getElementById('summary-price').textContent = state.cartMode && state.cartPayload
+                ? formatCurrency(total)
+                : formatCurrency(price);
             document.getElementById('summary-total').textContent = formatCurrency(total);
-            document.getElementById('submit-btn').disabled = state.loading || !(state.product && title && price > 0);
-            document.getElementById('submit-helper').textContent = state.product && title && price > 0
-                ? 'Sekali klik akan menyimpan ringkasan pesanan dan membuka chat WhatsApp admin.'
+            const hasReadyPrice = state.cartMode && state.cartPayload ? total > 0 : price > 0;
+            document.getElementById('submit-btn').disabled = state.loading || !(state.product && title && hasReadyPrice);
+            document.getElementById('submit-helper').textContent = state.product && title && hasReadyPrice
+                ? (state.cartMode && state.cartPayload
+                    ? 'Sekali klik akan checkout seluruh item keranjang lalu membuka chat WhatsApp admin.'
+                    : 'Sekali klik akan menyimpan ringkasan pesanan dan membuka chat WhatsApp admin.')
                 : 'Produk sedang disiapkan sebelum checkout bisa digunakan.';
         }
 
@@ -683,6 +779,16 @@
         }
 
         async function loadProduct() {
+            if (state.cartMode) {
+                const cartPayload = parseCartPayloadFromSession();
+                if (!applyCartMode(cartPayload)) {
+                    setProductStatus('Keranjang kosong', 'error');
+                    showToast('Keranjang kosong. Tambahkan produk terlebih dahulu.', 'warning');
+                    setTimeout(function() { window.location.href = 'cart.html'; }, 900);
+                }
+                return;
+            }
+
             if (!productId) {
                 setProductStatus('Produk tidak ditemukan', 'error');
                 showToast('Produk tidak ditemukan.', 'error');
@@ -805,6 +911,31 @@
         }
 
         function collectPayload() {
+            if (state.cartMode && state.cartPayload) {
+                const totalQty = Math.max(1, Math.floor(Number(state.cartPayload.total_qty) || 1));
+                const totalPrice = Number(state.cartPayload.total_price || 0);
+                const avgPrice = totalQty > 0 ? (totalPrice / totalQty) : totalPrice;
+                const detailLines = (state.cartPayload.items || []).map(function(item, idx) {
+                    const qty = Math.max(1, Math.floor(Number(item && item.qty) || 1));
+                    const price = Number(item && item.price) || 0;
+                    const subtotal = qty * price;
+                    return (idx + 1) + '. ' + String((item && item.title) || 'Produk') + ' x' + qty + ' (' + formatCurrency(subtotal) + ')';
+                }).join(' | ');
+
+                return {
+                    nama: document.getElementById('cust-name').value.trim(),
+                    whatsapp: document.getElementById('cust-wa').value.trim(),
+                    email: document.getElementById('cust-email').value.trim(),
+                    alamat: document.getElementById('cust-address').value.trim(),
+                    id_produk: 'cart_bundle',
+                    nama_produk: 'Keranjang Belanja (' + state.cartPayload.item_count + ' item)',
+                    harga_satuan: avgPrice,
+                    jumlah: totalQty,
+                    total_harga: totalPrice,
+                    detail_pesanan: detailLines || 'Checkout multi-item dari keranjang.'
+                };
+            }
+
             const qty = getQty();
             const price = getPrice();
             return {
@@ -882,6 +1013,15 @@
                 if (json.status !== 'success') throw new Error(json.message || 'Gagal memproses checkout.');
 
                 try { sessionStorage.setItem(LAST_ORDER_KEY, JSON.stringify(json.order || payload)); } catch (e) {}
+                if (state.cartMode) {
+                    try { sessionStorage.removeItem(getCartCheckoutKey()); }
+                    catch (e) { if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e); }
+                    try {
+                        if (window.CEPAT_CART && typeof window.CEPAT_CART.clear === 'function') window.CEPAT_CART.clear();
+                    } catch (e) {
+                        if (typeof console !== 'undefined' && typeof console.warn === 'function') console.warn('[CEPAT] Non-fatal error suppressed', e);
+                    }
+                }
 
                 const waMessage = json.whatsapp_message || buildClientWhatsappMessage(payload);
                 const redirectUrl = json.redirect_url || buildClientWhatsappUrl(payload);
@@ -922,6 +1062,7 @@
 
             document.querySelectorAll('[data-qty-adjust]').forEach(function(button) {
                 button.addEventListener('click', function() {
+                    if (state.cartMode) return;
                     const step = Number(button.getAttribute('data-qty-adjust') || 0);
                     const input = document.getElementById('order-qty');
                     input.value = String(Math.max(1, (parseInt(input.value || '1', 10) || 1) + step));
@@ -931,6 +1072,7 @@
             });
 
             document.getElementById('order-qty').addEventListener('input', function() {
+                if (state.cartMode) return;
                 syncSummary();
                 validateForm();
             });
