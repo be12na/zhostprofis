@@ -634,130 +634,329 @@
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
     <noscript><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap" rel="stylesheet"></noscript>
     <style>
-        body { font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 16px; line-height: 1.5; -webkit-text-size-adjust: 100%; }
-        .fade-in { animation: fadeIn 0.4s ease-out forwards; opacity: 0; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(15px); } to { opacity: 1; transform: translateY(0); } }
+        :root {
+            --brand-primary: #4f46e5;
+            --brand-accent: #7c3aed;
+            --surface-soft: #eef2ff;
+            --surface-card: #ffffff;
+            --text-main: #0f172a;
+            --text-muted: #475569;
+            --radius-lg: 1.25rem;
+            --radius-xl: 1.75rem;
+            --shadow-soft: 0 14px 36px -26px rgba(15, 23, 42, 0.35);
+            --shadow-hover: 0 22px 42px -24px rgba(79, 70, 229, 0.32);
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 16px;
+            line-height: 1.5;
+            -webkit-text-size-adjust: 100%;
+            color: var(--text-main);
+            background: radial-gradient(circle at top right, #e0e7ff 0%, #f8fafc 45%, #ffffff 100%);
+        }
+
+        .skip-link {
+            position: absolute;
+            top: -60px;
+            left: 1rem;
+            z-index: 100;
+            padding: 0.75rem 1rem;
+            border-radius: 999px;
+            background: #111827;
+            color: #ffffff;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            transition: top 0.2s ease;
+        }
+
+        .skip-link:focus-visible {
+            top: 1rem;
+        }
+
+        :focus-visible {
+            outline: 3px solid rgba(79, 70, 229, 0.45);
+            outline-offset: 2px;
+        }
+
+        .fade-in {
+            animation: fadeIn 0.45s ease-out forwards;
+            opacity: 0;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(15px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
         .delay-1 { animation-delay: 0.1s; }
         .delay-2 { animation-delay: 0.2s; }
         .delay-3 { animation-delay: 0.3s; }
-        .catalog-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; align-items: stretch; }
-        .catalog-card { min-height: 100%; border: 1px solid rgb(226 232 240); border-radius: 1.35rem; background: rgba(255,255,255,0.98); box-shadow: 0 12px 32px -24px rgba(15,23,42,0.28); transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease; }
-        @media (hover: hover) { .catalog-card:hover { transform: translateY(-4px); border-color: rgb(199 210 254); box-shadow: 0 18px 38px -24px rgba(79,70,229,0.26); } .catalog-card:hover .catalog-image { transform: scale(1.04); } }
-        .catalog-media { aspect-ratio: 4/4.6; }
-        .catalog-image { transition: transform 0.4s ease; }
-        .catalog-title { min-height: 2.4rem; }
-        .catalog-desc { min-height: 3.4rem; }
-        a, button, [role="button"], input, select, textarea { min-height: 48px; min-width: 48px; }
-        a:not(.catalog-card):not(.catalog-media), button { touch-action: manipulation; }
-        @media (min-width: 640px) { .catalog-grid { grid-template-columns: repeat(3, minmax(0,1fr)); gap: 0.8rem; } }
-        @media (min-width: 1024px) { .catalog-grid { grid-template-columns: repeat(5, minmax(0,1fr)); gap: 0.9rem; } }
-        @media (min-width: 1280px) { .catalog-grid { grid-template-columns: repeat(6, minmax(0,1fr)); gap: 1rem; } }
-        @media (min-width: 1536px) { .catalog-grid { grid-template-columns: repeat(7, minmax(0,1fr)); } }
-        @media (max-width: 320px) { .catalog-grid { grid-template-columns: 1fr; } }
+
+        .catalog-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1rem;
+            align-items: stretch;
+        }
+
+        .catalog-card {
+            min-height: 100%;
+            border: 1px solid rgb(226 232 240);
+            border-radius: var(--radius-lg);
+            background: rgba(255, 255, 255, 0.98);
+            box-shadow: var(--shadow-soft);
+            transition: transform 0.28s cubic-bezier(.4, .2, .2, 1), box-shadow 0.28s, border-color 0.28s;
+        }
+
+        @media (hover: hover) {
+            .catalog-card:hover {
+                transform: translateY(-6px);
+                border-color: rgba(99, 102, 241, 0.35);
+                box-shadow: var(--shadow-hover);
+            }
+
+            .catalog-card:hover .catalog-image {
+                transform: scale(1.03);
+            }
+        }
+
+        .catalog-media {
+            aspect-ratio: 4 / 4.4;
+        }
+
+        .catalog-image {
+            transition: transform 0.4s ease;
+        }
+
+        .catalog-title {
+            min-height: 2.5rem;
+        }
+
+        .catalog-desc {
+            min-height: 3.5rem;
+        }
+
+        .hero-preview-card {
+            border-radius: var(--radius-xl);
+            border: 1px solid rgba(129, 140, 248, 0.24);
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(238, 242, 255, 0.98));
+            box-shadow: 0 24px 50px -35px rgba(79, 70, 229, 0.45);
+        }
+
+        .trust-chip {
+            border: 1px solid rgba(148, 163, 184, 0.35);
+            background: rgba(255, 255, 255, 0.88);
+            color: var(--text-muted);
+        }
+
+        a,
+        button,
+        [role="button"],
+        input,
+        select,
+        textarea {
+            min-height: 48px;
+            min-width: 48px;
+        }
+
+        a:not(.catalog-card):not(.catalog-media),
+        button {
+            touch-action: manipulation;
+        }
+
+        @media (min-width: 520px) {
+            .catalog-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (min-width: 860px) {
+            .catalog-grid {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+        }
+
+        @media (min-width: 1180px) {
+            .catalog-grid {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 1.15rem;
+            }
+        }
+
+        @media (min-width: 1480px) {
+            .catalog-grid {
+                grid-template-columns: repeat(5, minmax(0, 1fr));
+            }
+        }
     </style>
 </head>
-<body class="bg-[#f8f9fa] text-slate-800">
+<body class="text-slate-800 antialiased">
+    <a class="skip-link" href="#katalog">Lewati ke katalog</a>
 
-    <header class="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50">
-        <div class="max-w-[min(1680px,98vw)] mx-auto px-4 sm:px-5 lg:px-6 h-20 flex justify-between items-center gap-4">
-           <div class="flex-1 flex items-center gap-3 min-w-0">
-                <img id="dyn-site-logo" src="data:," alt="" class="h-8 md:h-10 w-auto hidden select-none object-contain flex-shrink-0 transition-transform hover:scale-105" loading="lazy">
-                <i id="logo-fallback" data-lucide="layers" class="w-8 h-8 text-indigo-600 flex-shrink-0 transition-transform hover:rotate-12"></i>
-                <strong class="dyn-site-name text-lg md:text-2xl font-black text-indigo-600 tracking-tighter uppercase truncate block">KELAS JAGOAN</strong>
+    <header class="sticky top-0 z-50 border-b border-indigo-100/70 bg-white/85 backdrop-blur-xl">
+        <div class="mx-auto flex h-20 w-full max-w-[min(1680px,98vw)] items-center justify-between gap-4 px-4 sm:px-5 lg:px-6">
+            <div class="flex min-w-0 flex-1 items-center gap-3">
+                <img id="dyn-site-logo" src="data:," alt="" class="hidden h-9 w-auto flex-shrink-0 select-none object-contain transition-transform hover:scale-105 md:h-10" loading="lazy">
+                <i id="logo-fallback" data-lucide="store" class="h-8 w-8 flex-shrink-0 text-indigo-600"></i>
+                <strong class="dyn-site-name block truncate text-lg font-black uppercase tracking-tight text-indigo-700 md:text-2xl">KELAS JAGOAN</strong>
             </div>
-            <div class="flex-shrink-0 flex items-center gap-2 sm:gap-3">
-                <a href="cart.html" class="relative inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-slate-600 shadow-sm hover:border-indigo-200 hover:text-indigo-600 transition-colors whitespace-nowrap">
-                    <i data-lucide="shopping-cart" class="w-4 h-4"></i>
+
+            <nav aria-label="Navigasi utama" class="hidden items-center gap-1 rounded-full border border-slate-200/80 bg-white/90 p-1.5 shadow-sm lg:flex">
+                <a href="#katalog" class="rounded-full px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-700">Produk</a>
+                <a href="#keunggulan" class="rounded-full px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-700">Keunggulan</a>
+                <a href="#faq" class="rounded-full px-4 py-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-700">FAQ</a>
+            </nav>
+
+            <div class="flex flex-shrink-0 items-center gap-2 sm:gap-3">
+                <a href="cart.html" class="relative inline-flex items-center gap-2 whitespace-nowrap rounded-full border border-slate-200 bg-white px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-slate-600 shadow-sm transition-colors hover:border-indigo-200 hover:text-indigo-700">
+                    <i data-lucide="shopping-cart" class="h-4 w-4"></i>
                     <span class="hidden sm:inline">Keranjang</span>
-                    <span id="cart-counter" class="hidden min-w-[1.3rem] h-[1.3rem] rounded-full bg-indigo-600 px-1 text-[10px] font-black leading-[1.3rem] text-center text-white">0</span>
+                    <span id="cart-counter" aria-live="polite" class="hidden h-[1.3rem] min-w-[1.3rem] rounded-full bg-indigo-600 px-1 text-center text-[10px] font-black leading-[1.3rem] text-white">0</span>
                 </a>
-                <a href="login.html" class="bg-indigo-600 text-white px-5 py-3 md:px-6 md:py-3 rounded-full font-bold text-sm shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:shadow-indigo-300 hover:-translate-y-0.5 transition-all flex items-center gap-2 group whitespace-nowrap">
+                <a href="login.html" class="group inline-flex items-center gap-2 whitespace-nowrap rounded-full bg-indigo-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-indigo-200 transition-all hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-indigo-300 md:px-6">
                     <span>Login</span>
-                    <i data-lucide="arrow-right" class="w-4 h-4 group-hover:translate-x-1 transition-transform"></i>
+                    <i data-lucide="arrow-right" class="h-4 w-4 transition-transform group-hover:translate-x-1"></i>
                 </a>
             </div>
         </div>
     </header>
 
-    <section class="max-w-[min(1560px,97vw)] mx-auto px-4 sm:px-5 lg:px-6 py-14 md:py-16 text-center">
-        <div class="inline-block bg-indigo-50 text-indigo-600 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest mb-6 fade-in">Produk Fisik Pilihan</div>
-        <h1 data-seo-title class="text-4xl md:text-6xl font-black tracking-tight mb-6 text-slate-900 fade-in delay-1">Temukan produk fisik berkualitas dengan detail jelas dan siap dikirim ke alamat Anda</h1>
-        <p data-seo-description class="text-xl md:text-2xl text-slate-500 max-w-4xl mx-auto mb-10 fade-in delay-2 font-medium">Belanja lebih tenang dengan spesifikasi yang transparan, panduan penggunaan singkat, pengemasan aman, dan layanan pengiriman yang rapi hingga produk tiba di tangan Anda</p>
-        <a href="#katalog" class="inline-block bg-slate-900 text-white px-8 py-4 rounded-full font-bold text-lg shadow-xl shadow-slate-300 hover:scale-105 transition-all fade-in delay-3">Lihat Katalog Produk</a>
-    </section>
-
-    <section class="max-w-[min(1320px,94vw)] mx-auto px-4 sm:px-5 lg:px-6 pb-5 md:pb-8">
-        <div class="rounded-[1.75rem] border border-indigo-100 bg-white/95 px-6 py-6 md:px-8 md:py-7 text-center shadow-sm shadow-slate-200">
-            <p class="text-sm md:text-base leading-7 text-slate-600 font-medium">Anda tidak perlu bingung memilih. Cek spesifikasi, ukuran, bahan, dan panduan penggunaan singkatnya, lalu pilih produk yang paling pas untuk kebutuhan Anda</p>
-        </div>
-    </section>
-
-    <section id="katalog" class="max-w-[min(1680px,98vw)] mx-auto px-3 sm:px-4 lg:px-5 py-6 md:py-8 mb-14 scroll-mt-24">
-        <div class="max-w-3xl mx-auto text-center mb-6 md:mb-8">
-            <div class="inline-flex items-center rounded-full border border-indigo-100 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-indigo-600 shadow-sm shadow-slate-100">Pilih Sesuai Kebutuhan</div>
-            <h2 class="mt-4 text-2xl md:text-3xl font-black tracking-tight text-slate-900">Temukan produk fisik dengan spesifikasi jelas, penggunaan praktis, dan pengiriman aman</h2>
-            <p class="mt-3 text-sm md:text-base text-slate-500">Setiap produk di Kelas Jagoan dilengkapi informasi ukuran atau material, cara penggunaan, estimasi pengiriman, serta kebijakan retur agar Anda bisa belanja dengan lebih yakin</p>
-        </div>
-        
-        <div id="public-products" class="catalog-grid">
-            <div id="katalog-loader" class="col-span-full text-center py-10 rounded-[1.5rem] border border-dashed border-slate-200 bg-white/90 shadow-sm">
-                <div class="animate-spin w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full mx-auto mb-4"></div>
-                <p class="text-slate-400 text-[11px] font-bold uppercase tracking-[0.22em] animate-pulse">Menyiapkan Katalog Produk...</p>
+    <main>
+        <section class="mx-auto grid w-full max-w-[min(1680px,98vw)] gap-8 px-4 pb-8 pt-12 sm:px-5 lg:grid-cols-[1.2fr_0.8fr] lg:items-center lg:px-6 lg:pt-16">
+            <div class="text-center lg:text-left">
+                <p class="fade-in inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.24em] text-indigo-700">Store Front</p>
+                <h1 data-seo-title class="fade-in delay-1 mt-5 text-4xl font-black tracking-tight text-slate-900 md:text-6xl">Belanja produk fisik premium untuk kebutuhan harian dan bisnis Anda</h1>
+                <p data-seo-description class="fade-in delay-2 mx-auto mt-6 max-w-2xl text-lg font-medium leading-8 text-slate-600 lg:mx-0">Pilih produk dengan informasi spesifikasi yang rapi, harga transparan, serta pengiriman aman agar pengalaman checkout Anda tetap cepat dan nyaman.</p>
+                <div class="fade-in delay-3 mt-8 flex flex-wrap items-center justify-center gap-3 lg:justify-start">
+                    <a href="#katalog" class="inline-flex items-center justify-center rounded-full bg-slate-900 px-8 py-4 text-sm font-black uppercase tracking-[0.14em] text-white shadow-xl shadow-slate-300 transition-all hover:-translate-y-0.5 hover:bg-slate-800">Belanja Sekarang</a>
+                    <a href="#keunggulan" class="inline-flex items-center justify-center rounded-full border border-indigo-200 bg-white px-8 py-4 text-sm font-black uppercase tracking-[0.14em] text-indigo-700 transition-colors hover:border-indigo-300 hover:bg-indigo-50">Lihat Keunggulan</a>
+                </div>
+                <div class="mt-7 flex flex-wrap items-center justify-center gap-2 lg:justify-start">
+                    <span class="trust-chip inline-flex items-center rounded-full px-3.5 py-2 text-xs font-bold">Produk Terkurasi</span>
+                    <span class="trust-chip inline-flex items-center rounded-full px-3.5 py-2 text-xs font-bold">Harga Jelas</span>
+                    <span class="trust-chip inline-flex items-center rounded-full px-3.5 py-2 text-xs font-bold">Pengiriman Aman</span>
+                </div>
             </div>
-        </div>
-        <div id="catalog-pagination" class="hidden mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-            <div class="flex flex-col items-center justify-between gap-3 sm:flex-row">
-                <p id="catalog-pagination-info" class="text-xs font-bold text-slate-500">Menampilkan 0 dari 0 produk</p>
-                <button id="catalog-load-more" type="button" class="inline-flex items-center justify-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-5 py-2.5 text-xs font-black uppercase tracking-[0.12em] text-indigo-700 hover:border-indigo-300 hover:bg-indigo-100 transition-colors disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400">
-                    <span id="catalog-load-more-label">Load More</span>
-                </button>
+
+            <div class="hero-preview-card p-5 sm:p-6">
+                <div class="mb-4 flex items-center justify-between">
+                    <h2 class="text-base font-black uppercase tracking-[0.16em] text-indigo-700">Best Seller</h2>
+                    <span class="rounded-full bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">Top Picks</span>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <article class="rounded-2xl border border-indigo-100 bg-white p-3 shadow-sm">
+                        <div class="aspect-square rounded-xl bg-gradient-to-br from-indigo-100 to-purple-100"></div>
+                        <p class="mt-3 text-xs font-bold text-slate-700">Smart Desk Set</p>
+                        <p class="text-xs font-black text-indigo-700">Rp 249.000</p>
+                    </article>
+                    <article class="rounded-2xl border border-indigo-100 bg-white p-3 shadow-sm">
+                        <div class="aspect-square rounded-xl bg-gradient-to-br from-slate-100 to-indigo-100"></div>
+                        <p class="mt-3 text-xs font-bold text-slate-700">Travel Utility Kit</p>
+                        <p class="text-xs font-black text-indigo-700">Rp 189.000</p>
+                    </article>
+                </div>
+                <p class="dyn-site-tagline mt-4 text-sm leading-6 text-slate-500">Kurasi produk fisik pilihan dengan kualitas terjaga untuk kebutuhan personal maupun operasional tim.</p>
             </div>
-        </div>
-    </section>
+        </section>
 
-    <section id="faq" class="max-w-5xl mx-auto px-6 pb-20">
-        <div class="max-w-2xl mx-auto text-center mb-8 md:mb-10">
-            <div class="inline-flex items-center rounded-full border border-indigo-100 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-indigo-600 shadow-sm shadow-slate-100">Mini FAQ</div>
-            <h2 class="mt-4 text-2xl md:text-3xl font-black tracking-tight text-slate-900">Pertanyaan singkat sebelum Anda checkout</h2>
-        </div>
+        <section id="keunggulan" class="mx-auto mb-10 w-full max-w-[min(1380px,95vw)] px-4 sm:px-5 lg:px-6">
+            <div class="grid gap-4 md:grid-cols-3">
+                <article class="rounded-[1.4rem] border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200">
+                    <i data-lucide="badge-check" class="h-6 w-6 text-indigo-600"></i>
+                    <h2 class="mt-4 text-base font-black text-slate-900">Produk Terseleksi</h2>
+                    <p class="mt-2 text-sm leading-6 text-slate-600">Setiap item dipilih berdasarkan mutu, fungsionalitas, dan relevansi untuk kebutuhan penggunaan harian.</p>
+                </article>
+                <article class="rounded-[1.4rem] border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200">
+                    <i data-lucide="shield-check" class="h-6 w-6 text-indigo-600"></i>
+                    <h2 class="mt-4 text-base font-black text-slate-900">Transaksi Aman</h2>
+                    <p class="mt-2 text-sm leading-6 text-slate-600">Alur checkout dirancang ringkas dengan informasi pembayaran yang jelas dan konfirmasi pesanan yang cepat.</p>
+                </article>
+                <article class="rounded-[1.4rem] border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200">
+                    <i data-lucide="truck" class="h-6 w-6 text-indigo-600"></i>
+                    <h2 class="mt-4 text-base font-black text-slate-900">Pengiriman Andal</h2>
+                    <p class="mt-2 text-sm leading-6 text-slate-600">Produk dikemas dengan rapi dan dikirim melalui layanan tepercaya agar tiba sesuai ekspektasi Anda.</p>
+                </article>
+            </div>
+        </section>
 
-        <div class="grid gap-4">
-            <article class="rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200">
-                <h3 class="text-base md:text-lg font-bold text-slate-900">Apakah spesifikasi produk dijelaskan dengan lengkap?</h3>
-                <p class="mt-3 text-sm md:text-base leading-7 text-slate-600">Ya. Setiap halaman produk menampilkan informasi penting seperti ukuran, bahan, warna atau varian, isi paket, dan detail yang membantu Anda memilih dengan lebih yakin</p>
-            </article>
-            <article class="rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200">
-                <h3 class="text-base md:text-lg font-bold text-slate-900">Bagaimana cara penggunaan dan perawatannya?</h3>
-                <p class="mt-3 text-sm md:text-base leading-7 text-slate-600">Ikuti panduan singkat pada halaman produk atau instruksi yang disertakan di paket. Dengan pemakaian dan perawatan yang tepat, produk akan nyaman digunakan lebih lama</p>
-            </article>
-            <article class="rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200">
-                <h3 class="text-base md:text-lg font-bold text-slate-900">Bagaimana proses pengiriman dan kebijakan retur?</h3>
-                <p class="mt-3 text-sm md:text-base leading-7 text-slate-600">Pesanan diproses secepatnya, dikemas aman, dan dikirim melalui layanan yang tersedia. Jika produk rusak, salah kirim, atau tidak sesuai ketentuan, Anda bisa mengajukan retur sesuai kebijakan yang berlaku</p>
-            </article>
-        </div>
-    </section>
+        <section id="katalog" class="scroll-mt-24 mx-auto mb-14 w-full max-w-[min(1680px,98vw)] px-4 py-4 sm:px-5 lg:px-6">
+            <div class="mx-auto mb-7 max-w-3xl text-center">
+                <div class="inline-flex items-center rounded-full border border-indigo-100 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-indigo-600 shadow-sm shadow-slate-100">Katalog Produk</div>
+                <h2 class="mt-4 text-2xl font-black tracking-tight text-slate-900 md:text-3xl">Pilih produk yang paling sesuai untuk kebutuhan Anda</h2>
+                <p class="mt-3 text-sm text-slate-500 md:text-base">Setiap produk menampilkan ringkasan spesifikasi, informasi penggunaan, harga, dan status ketersediaan untuk membantu keputusan belanja yang cepat.</p>
+            </div>
 
-    <footer class="bg-white border-t py-12 mt-20">
-        <div class="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-3 gap-8 text-center md:text-left">
+            <div id="public-products" class="catalog-grid">
+                <div id="katalog-loader" class="col-span-full rounded-[1.5rem] border border-dashed border-slate-200 bg-white/90 py-10 text-center shadow-sm">
+                    <div class="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent"></div>
+                    <p class="animate-pulse text-[11px] font-bold uppercase tracking-[0.22em] text-slate-400">Menyiapkan Katalog Produk...</p>
+                </div>
+            </div>
+
+            <div id="catalog-pagination" class="mt-6 hidden rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+                <div class="flex flex-col items-center justify-between gap-3 sm:flex-row">
+                    <p id="catalog-pagination-info" class="text-xs font-bold text-slate-500">Menampilkan 0 dari 0 produk</p>
+                    <button id="catalog-load-more" type="button" class="inline-flex items-center justify-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-5 py-2.5 text-xs font-black uppercase tracking-[0.12em] text-indigo-700 transition-colors hover:border-indigo-300 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400">
+                        <span id="catalog-load-more-label">Muat Lebih Banyak</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <section id="faq" class="mx-auto max-w-5xl px-6 pb-20">
+            <div class="mx-auto mb-8 max-w-2xl text-center md:mb-10">
+                <div class="inline-flex items-center rounded-full border border-indigo-100 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-indigo-600 shadow-sm shadow-slate-100">Mini FAQ</div>
+                <h2 class="mt-4 text-2xl font-black tracking-tight text-slate-900 md:text-3xl">Pertanyaan singkat sebelum checkout</h2>
+            </div>
+
+            <div class="grid gap-4">
+                <article class="rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200">
+                    <h3 class="text-base font-bold text-slate-900 md:text-lg">Apakah informasi produk tersedia dengan lengkap?</h3>
+                    <p class="mt-3 text-sm leading-7 text-slate-600 md:text-base">Ya. Setiap halaman produk menampilkan ukuran, bahan, varian, isi paket, dan ringkasan manfaat sehingga Anda bisa memilih dengan lebih yakin.</p>
+                </article>
+                <article class="rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200">
+                    <h3 class="text-base font-bold text-slate-900 md:text-lg">Bagaimana cara penggunaan dan perawatannya?</h3>
+                    <p class="mt-3 text-sm leading-7 text-slate-600 md:text-base">Ikuti panduan singkat pada halaman produk atau instruksi di dalam paket. Perawatan yang tepat membantu performa produk tetap optimal lebih lama.</p>
+                </article>
+                <article class="rounded-[1.5rem] border border-slate-200 bg-white p-6 shadow-sm shadow-slate-200">
+                    <h3 class="text-base font-bold text-slate-900 md:text-lg">Bagaimana proses pengiriman dan kebijakan retur?</h3>
+                    <p class="mt-3 text-sm leading-7 text-slate-600 md:text-base">Pesanan diproses secepatnya, dikemas aman, lalu dikirim melalui layanan yang tersedia. Jika ada kendala sesuai syarat berlaku, Anda dapat mengajukan retur.</p>
+                </article>
+            </div>
+        </section>
+    </main>
+
+    <footer class="mt-20 border-t border-slate-200 bg-white py-12">
+        <div class="mx-auto grid max-w-7xl grid-cols-1 gap-8 px-6 text-center md:grid-cols-3 md:text-left">
             <div>
-                <h3 class="text-xl font-black text-indigo-600 mb-4 dyn-site-name uppercase">KELAS JAGOAN</h3>
-                <p class="text-sm text-slate-500 dyn-site-tagline">Produk fisik pilihan dengan spesifikasi jelas, panduan penggunaan singkat, pengiriman aman, dan layanan belanja yang transparan.</p>
+                <h3 class="dyn-site-name mb-4 text-xl font-black uppercase text-indigo-600">KELAS JAGOAN</h3>
+                <p class="dyn-site-tagline text-sm text-slate-500">Store front produk fisik pilihan dengan informasi spesifikasi jelas, alur checkout nyaman, dan layanan belanja yang transparan.</p>
             </div>
             <div>
-                <h4 class="font-bold mb-4 text-slate-800">Informasi</h4>
-                <ul class="text-sm text-slate-500 space-y-1">
-                    <li><a href="/p.html?s=tentang-kami" class="hover:text-indigo-600 transition-colors inline-block py-2">Tentang Kami</a></li>
-                    <li><a href="/p.html?s=syarat-ketentuan" class="hover:text-indigo-600 transition-colors inline-block py-2">Syarat & Ketentuan</a></li>
-                    <li><a href="/p.html?s=kebijakan-privasi" class="hover:text-indigo-600 transition-colors inline-block py-2">Kebijakan Privasi</a></li>
+                <h4 class="mb-4 font-bold text-slate-800">Informasi</h4>
+                <ul class="space-y-1 text-sm text-slate-500">
+                    <li><a href="/p.html?s=tentang-kami" class="inline-block py-2 transition-colors hover:text-indigo-600">Tentang Kami</a></li>
+                    <li><a href="/p.html?s=syarat-ketentuan" class="inline-block py-2 transition-colors hover:text-indigo-600">Syarat & Ketentuan</a></li>
+                    <li><a href="/p.html?s=kebijakan-privasi" class="inline-block py-2 transition-colors hover:text-indigo-600">Kebijakan Privasi</a></li>
                 </ul>
             </div>
             <div>
-                <h4 class="font-bold mb-4 text-slate-800">Hubungi Kami</h4>
-                <p class="text-sm text-slate-500 mb-2">Email: <a id="dyn-email-link" href="#" class="text-indigo-600 hover:underline">...</a></p>
+                <h4 class="mb-4 font-bold text-slate-800">Hubungi Kami</h4>
+                <p class="mb-2 text-sm text-slate-500">Email: <a id="dyn-email-link" href="#" class="text-indigo-600 hover:underline">...</a></p>
                 <p class="text-sm text-slate-500">WhatsApp: <a id="dyn-wa-link" href="#" class="text-indigo-600 hover:underline">...</a></p>
             </div>
         </div>
-        <div class="text-center text-xs text-slate-400 mt-12 pt-8 border-t">
+        <div class="mt-12 border-t border-slate-100 pt-8 text-center text-xs text-slate-400">
             &copy; 2026 <span class="dyn-site-name">Kelas Jagoan</span>. Hak cipta dilindungi.
         </div>
     </footer>
@@ -940,7 +1139,7 @@
             button.classList.toggle('hidden', !hasMore);
             button.disabled = !hasMore || catalogState.loadingMore;
             button.setAttribute('aria-busy', catalogState.loadingMore ? 'true' : 'false');
-            label.textContent = catalogState.loadingMore ? 'Memuat...' : 'Load More';
+            label.textContent = catalogState.loadingMore ? 'Memuat...' : 'Muat Lebih Banyak';
         }
 
         function applyCatalogDataset(products, options = {}) {
@@ -1030,11 +1229,11 @@
                                 <button type="button"
                                     data-add-to-cart-id="${escapeHtml(String((p && p.id) || ''))}"
                                     class="inline-flex items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 px-3 py-3 text-xs font-bold text-indigo-700 hover:border-indigo-300 hover:bg-indigo-100 transition-colors">
-                                    Add to Cart
+                                    Tambah ke Keranjang
                                 </button>
                                 <a href="${escapeHtml(checkoutUrl)}"
                                     class="inline-flex items-center justify-center rounded-full bg-indigo-600 px-3 py-3 text-xs font-bold text-white shadow-sm shadow-indigo-200 hover:bg-indigo-700 transition-colors">
-                                    Checkout
+                                    Beli Sekarang
                                 </a>
                             </div>
                         </div>
