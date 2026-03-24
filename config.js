@@ -834,15 +834,6 @@
                 return n;
             }
 
-            function normalizeStock(raw) {
-                if (raw === null || raw === undefined || raw === '') return null;
-                var cleaned = String(raw).replace(/[^0-9.,-]/g, '').replace(',', '.').trim();
-                if (!cleaned) return null;
-                var stock = Number(cleaned);
-                if (!Number.isFinite(stock) || stock < 0) return null;
-                return Math.floor(stock);
-            }
-
             function normalizeItem(raw) {
                 var item = raw && typeof raw === 'object' ? raw : {};
                 var id = normalizeId(item.id || item.product_id);
@@ -853,14 +844,11 @@
 
                 var qty = Math.max(1, Math.floor(normalizePositiveNumber(item.qty || item.quantity || 1, 1)));
                 var price = normalizePositiveNumber(item.price || item.harga || item.harga_satuan || 0, 0);
-                var stock = normalizeStock(item.stock != null ? item.stock : (item.stok != null ? item.stok : item.available_stock));
-
                 return {
                     id: id,
                     title: title,
                     price: price,
                     qty: qty,
-                    stock: stock,
                     image_url: String(item.image_url || item.image || '').trim(),
                     lp_url: String(item.lp_url || item.url || '').trim(),
                     desc: String(item.desc || '').trim(),
@@ -938,19 +926,6 @@
                 return items.findIndex(function (item) { return normalizeId(item && item.id) === id; });
             }
 
-            function ensureStockAllowed(item, requestedQty) {
-                var maxStock = normalizeStock(item && item.stock);
-                if (maxStock === null) return { ok: true };
-                if (maxStock <= 0) return { ok: false, message: 'Stok produk habis.' };
-                if (requestedQty > maxStock) {
-                    return {
-                        ok: false,
-                        message: 'Jumlah melebihi stok tersedia (' + maxStock + ').'
-                    };
-                }
-                return { ok: true };
-            }
-
             var cartApi = {
                 storageKey: CART_KEY,
                 checkoutPayloadKey: checkoutPayloadKey,
@@ -983,9 +958,6 @@
                         normalized = Object.assign({}, current, normalized, { qty: nextQty });
                     }
 
-                    var stockCheck = ensureStockAllowed(normalized, nextQty);
-                    if (!stockCheck.ok) return { ok: false, message: stockCheck.message };
-
                     if (idx >= 0) items[idx] = normalized;
                     else items.push(normalized);
 
@@ -1010,9 +982,6 @@
                     }
 
                     var current = Object.assign({}, items[idx], { qty: nextQty });
-                    var stockCheck = ensureStockAllowed(current, nextQty);
-                    if (!stockCheck.ok) return { ok: false, message: stockCheck.message };
-
                     items[idx] = current;
                     var next = writeState({ items: items });
                     dispatchChange('update-qty', next);

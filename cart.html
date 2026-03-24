@@ -164,9 +164,6 @@
 
                 root.innerHTML = items.map(function (item) {
                     const subtotal = (Number(item.price) || 0) * (Number(item.qty) || 0);
-                    const stockText = item.stock === null || item.stock === undefined
-                        ? 'Stok fleksibel'
-                        : ('Stok tersedia: ' + item.stock);
                     const detailUrl = String(item.lp_url || item.url || ('checkout.html?id=' + encodeURIComponent(item.id || '')));
 
                     return `
@@ -180,7 +177,6 @@
                                     </div>
                                     <div class="min-w-0">
                                         <h3 class="truncate text-sm font-black text-slate-900">${escapeHtml(item.title)}</h3>
-                                        <p class="mt-1 text-xs text-slate-500">${stockText}</p>
                                         <p class="mt-1 text-xs font-bold text-slate-700">${formatCurrency(item.price)}</p>
                                         <a href="${escapeHtml(detailUrl)}" target="_blank" rel="noopener noreferrer" class="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-indigo-600 hover:text-indigo-700">
                                             Lihat detail
@@ -192,7 +188,7 @@
                                 <div class="flex flex-col gap-2 sm:items-end">
                                     <div class="inline-flex items-center rounded-xl border border-slate-200 bg-slate-50 p-1">
                                         <button data-cart-action="decrease" data-cart-id="${escapeHtml(item.id)}" class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-white hover:text-slate-700">-</button>
-                                        <input data-cart-qty="${escapeHtml(item.id)}" type="number" min="1" ${item.stock != null ? ('max="' + escapeHtml(item.stock) + '"') : ''} value="${escapeHtml(item.qty)}" class="h-8 w-14 rounded-lg border-0 bg-transparent text-center text-sm font-black text-slate-800 focus:ring-0" />
+                                        <input data-cart-qty="${escapeHtml(item.id)}" type="number" min="1" value="${escapeHtml(item.qty)}" class="h-8 w-14 rounded-lg border-0 bg-transparent text-center text-sm font-black text-slate-800 focus:ring-0" />
                                         <button data-cart-action="increase" data-cart-id="${escapeHtml(item.id)}" class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-white hover:text-slate-700">+</button>
                                     </div>
                                     <div class="text-xs font-black text-slate-900">Subtotal: ${formatCurrency(subtotal)}</div>

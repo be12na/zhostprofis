@@ -2375,7 +2375,7 @@ function createOrder(d, cfg) {
     ];
     if (email) waLines.splice(5, 0, "Email: " + email);
     waLines.push("");
-    waLines.push("Mohon info konfirmasi stok, ongkir, dan langkah pembayaran berikutnya. Terima kasih.");
+    waLines.push("Mohon info ongkir dan langkah pembayaran berikutnya. Terima kasih.");
 
     const waMessage = waLines.join("\n");
     const redirectUrl = buildWhatsAppApiUrl_(adminWA, waMessage);

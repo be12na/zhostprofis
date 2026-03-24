@@ -29,3 +29,16 @@
 
 - Order fisik tetap memakai alur manual: simpan ke Google Sheets lalu lanjut ke WhatsApp admin.
 - Cleanup key legacy di backend tetap dipertahankan untuk membantu migrasi data lama saat admin menyimpan settings baru.
+
+## 2026-03-24
+
+### Removed
+
+- Menghapus total fitur validasi stok produk dari runtime frontend/backend.
+- Menghapus pemblokiran kuantitas berbasis stok pada modul cart.
+- Menghapus wording konfirmasi stok pada alur checkout dan message backend.
+
+### Docs
+
+- Menambahkan catatan API bahwa endpoint validasi stok tidak lagi tersedia.
+- Menambahkan migration script `migrations/20260324_remove_stock_validation.sql` untuk deployment relasional lama.

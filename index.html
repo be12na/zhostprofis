@@ -640,25 +640,26 @@
         .delay-1 { animation-delay: 0.1s; }
         .delay-2 { animation-delay: 0.2s; }
         .delay-3 { animation-delay: 0.3s; }
-        .catalog-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem; align-items: stretch; }
+        .catalog-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.7rem; align-items: stretch; }
         .catalog-card { min-height: 100%; border: 1px solid rgb(226 232 240); border-radius: 1.35rem; background: rgba(255,255,255,0.98); box-shadow: 0 12px 32px -24px rgba(15,23,42,0.28); transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease; }
         @media (hover: hover) { .catalog-card:hover { transform: translateY(-4px); border-color: rgb(199 210 254); box-shadow: 0 18px 38px -24px rgba(79,70,229,0.26); } .catalog-card:hover .catalog-image { transform: scale(1.04); } }
         .catalog-media { aspect-ratio: 4/4.6; }
         .catalog-image { transition: transform 0.4s ease; }
-        .catalog-title { min-height: 2.65rem; }
-        .catalog-desc { min-height: 3.9rem; }
+        .catalog-title { min-height: 2.4rem; }
+        .catalog-desc { min-height: 3.4rem; }
         a, button, [role="button"], input, select, textarea { min-height: 48px; min-width: 48px; }
         a:not(.catalog-card):not(.catalog-media), button { touch-action: manipulation; }
-        @media (min-width: 768px) { .catalog-grid { grid-template-columns: repeat(3, minmax(0,1fr)); gap: 1rem; } }
-        @media (min-width: 1024px) { .catalog-grid { grid-template-columns: repeat(4, minmax(0,1fr)); gap: 1.15rem; } }
-        @media (min-width: 1280px) { .catalog-grid { grid-template-columns: repeat(5, minmax(0,1fr)); } }
+        @media (min-width: 640px) { .catalog-grid { grid-template-columns: repeat(3, minmax(0,1fr)); gap: 0.8rem; } }
+        @media (min-width: 1024px) { .catalog-grid { grid-template-columns: repeat(5, minmax(0,1fr)); gap: 0.9rem; } }
+        @media (min-width: 1280px) { .catalog-grid { grid-template-columns: repeat(6, minmax(0,1fr)); gap: 1rem; } }
+        @media (min-width: 1536px) { .catalog-grid { grid-template-columns: repeat(7, minmax(0,1fr)); } }
         @media (max-width: 320px) { .catalog-grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body class="bg-[#f8f9fa] text-slate-800">
 
     <header class="bg-white/80 backdrop-blur-md border-b sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-6 h-20 flex justify-between items-center gap-4">
+        <div class="max-w-[min(1680px,98vw)] mx-auto px-4 sm:px-5 lg:px-6 h-20 flex justify-between items-center gap-4">
            <div class="flex-1 flex items-center gap-3 min-w-0">
                 <img id="dyn-site-logo" src="data:," alt="" class="h-8 md:h-10 w-auto hidden select-none object-contain flex-shrink-0 transition-transform hover:scale-105" loading="lazy">
                 <i id="logo-fallback" data-lucide="layers" class="w-8 h-8 text-indigo-600 flex-shrink-0 transition-transform hover:rotate-12"></i>
@@ -678,21 +679,21 @@
         </div>
     </header>
 
-    <section class="max-w-7xl mx-auto px-6 py-20 text-center">
+    <section class="max-w-[min(1560px,97vw)] mx-auto px-4 sm:px-5 lg:px-6 py-14 md:py-16 text-center">
         <div class="inline-block bg-indigo-50 text-indigo-600 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest mb-6 fade-in">Produk Fisik Pilihan</div>
         <h1 data-seo-title class="text-4xl md:text-6xl font-black tracking-tight mb-6 text-slate-900 fade-in delay-1">Temukan produk fisik berkualitas dengan detail jelas dan siap dikirim ke alamat Anda</h1>
         <p data-seo-description class="text-xl md:text-2xl text-slate-500 max-w-4xl mx-auto mb-10 fade-in delay-2 font-medium">Belanja lebih tenang dengan spesifikasi yang transparan, panduan penggunaan singkat, pengemasan aman, dan layanan pengiriman yang rapi hingga produk tiba di tangan Anda</p>
         <a href="#katalog" class="inline-block bg-slate-900 text-white px-8 py-4 rounded-full font-bold text-lg shadow-xl shadow-slate-300 hover:scale-105 transition-all fade-in delay-3">Lihat Katalog Produk</a>
     </section>
 
-    <section class="max-w-4xl mx-auto px-6 pb-6 md:pb-10">
+    <section class="max-w-[min(1320px,94vw)] mx-auto px-4 sm:px-5 lg:px-6 pb-5 md:pb-8">
         <div class="rounded-[1.75rem] border border-indigo-100 bg-white/95 px-6 py-6 md:px-8 md:py-7 text-center shadow-sm shadow-slate-200">
             <p class="text-sm md:text-base leading-7 text-slate-600 font-medium">Anda tidak perlu bingung memilih. Cek spesifikasi, ukuran, bahan, dan panduan penggunaan singkatnya, lalu pilih produk yang paling pas untuk kebutuhan Anda</p>
         </div>
     </section>
 
-    <section id="katalog" class="max-w-7xl mx-auto px-5 sm:px-6 lg:px-8 py-8 md:py-10 mb-20 scroll-mt-24">
-        <div class="max-w-2xl mx-auto text-center mb-8 md:mb-10">
+    <section id="katalog" class="max-w-[min(1680px,98vw)] mx-auto px-3 sm:px-4 lg:px-5 py-6 md:py-8 mb-14 scroll-mt-24">
+        <div class="max-w-3xl mx-auto text-center mb-6 md:mb-8">
             <div class="inline-flex items-center rounded-full border border-indigo-100 bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.24em] text-indigo-600 shadow-sm shadow-slate-100">Pilih Sesuai Kebutuhan</div>
             <h2 class="mt-4 text-2xl md:text-3xl font-black tracking-tight text-slate-900">Temukan produk fisik dengan spesifikasi jelas, penggunaan praktis, dan pengiriman aman</h2>
             <p class="mt-3 text-sm md:text-base text-slate-500">Setiap produk di Kelas Jagoan dilengkapi informasi ukuran atau material, cara penggunaan, estimasi pengiriman, serta kebijakan retur agar Anda bisa belanja dengan lebih yakin</p>
@@ -702,6 +703,14 @@
             <div id="katalog-loader" class="col-span-full text-center py-10 rounded-[1.5rem] border border-dashed border-slate-200 bg-white/90 shadow-sm">
                 <div class="animate-spin w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full mx-auto mb-4"></div>
                 <p class="text-slate-400 text-[11px] font-bold uppercase tracking-[0.22em] animate-pulse">Menyiapkan Katalog Produk...</p>
+            </div>
+        </div>
+        <div id="catalog-pagination" class="hidden mt-6 rounded-2xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
+            <div class="flex flex-col items-center justify-between gap-3 sm:flex-row">
+                <p id="catalog-pagination-info" class="text-xs font-bold text-slate-500">Menampilkan 0 dari 0 produk</p>
+                <button id="catalog-load-more" type="button" class="inline-flex items-center justify-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-5 py-2.5 text-xs font-black uppercase tracking-[0.12em] text-indigo-700 hover:border-indigo-300 hover:bg-indigo-100 transition-colors disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400">
+                    <span id="catalog-load-more-label">Load More</span>
+                </button>
             </div>
         </div>
     </section>
@@ -760,6 +769,12 @@
         const PUBLIC_SYNC_CHANNEL = 'cepat_public_sync_channel';
         const DEFAULT_CATALOG_PRODUCT_DESCRIPTION = 'Spesifikasi jelas, panduan penggunaan singkat, dan pengiriman aman untuk membantu Anda belanja dengan lebih yakin';
         const CATALOG_CONTROL_CHAR_RE = new RegExp('[\\u0000-\\u001F\\u007F-\\u009F\\u200B-\\u200D\\uFEFF]', 'g');
+        const CATALOG_PAGE_SIZE = 12;
+        const catalogState = {
+            allProducts: [],
+            visibleCount: 0,
+            loadingMore: false
+        };
 
         function normalizeCatalogText(value) {
             return String(value || '')
@@ -898,6 +913,69 @@
             });
         }
 
+        function getVisibleCatalogProducts() {
+            if (!Array.isArray(catalogState.allProducts) || !catalogState.allProducts.length) return [];
+            const visible = Math.max(0, Math.min(catalogState.visibleCount, catalogState.allProducts.length));
+            return catalogState.allProducts.slice(0, visible);
+        }
+
+        function updateCatalogPagination() {
+            const panel = document.getElementById('catalog-pagination');
+            const info = document.getElementById('catalog-pagination-info');
+            const button = document.getElementById('catalog-load-more');
+            const label = document.getElementById('catalog-load-more-label');
+            if (!panel || !info || !button || !label) return;
+
+            const total = Array.isArray(catalogState.allProducts) ? catalogState.allProducts.length : 0;
+            const shown = Math.min(catalogState.visibleCount, total);
+            const hasMore = shown < total;
+
+            if (total <= 0) {
+                panel.classList.add('hidden');
+                return;
+            }
+
+            panel.classList.remove('hidden');
+            info.textContent = 'Menampilkan ' + shown + ' dari ' + total + ' produk';
+            button.classList.toggle('hidden', !hasMore);
+            button.disabled = !hasMore || catalogState.loadingMore;
+            button.setAttribute('aria-busy', catalogState.loadingMore ? 'true' : 'false');
+            label.textContent = catalogState.loadingMore ? 'Memuat...' : 'Load More';
+        }
+
+        function applyCatalogDataset(products, options = {}) {
+            const list = Array.isArray(products) ? products : [];
+            const preserveVisible = !!options.preserveVisible;
+            const previousVisible = catalogState.visibleCount || CATALOG_PAGE_SIZE;
+            catalogState.allProducts = [...list].reverse();
+            catalogState.loadingMore = false;
+
+            if (!catalogState.allProducts.length) {
+                catalogState.visibleCount = 0;
+            } else if (preserveVisible) {
+                catalogState.visibleCount = Math.min(catalogState.allProducts.length, Math.max(previousVisible, CATALOG_PAGE_SIZE));
+            } else {
+                catalogState.visibleCount = Math.min(catalogState.allProducts.length, CATALOG_PAGE_SIZE);
+            }
+
+            renderCatalog(getVisibleCatalogProducts());
+        }
+
+        function loadMoreCatalogPage() {
+            if (catalogState.loadingMore) return;
+            const total = Array.isArray(catalogState.allProducts) ? catalogState.allProducts.length : 0;
+            if (catalogState.visibleCount >= total) return;
+
+            catalogState.loadingMore = true;
+            updateCatalogPagination();
+
+            window.setTimeout(function () {
+                catalogState.visibleCount = Math.min(total, catalogState.visibleCount + CATALOG_PAGE_SIZE);
+                catalogState.loadingMore = false;
+                renderCatalog(getVisibleCatalogProducts());
+            }, 120);
+        }
+
         // Fungsi Render HTML Produk
         function renderCatalog(products) {
             const container = document.getElementById('public-products');
@@ -905,43 +983,42 @@
             // Safety check: Pastikan products adalah array valid
             if (!products || !Array.isArray(products) || products.length === 0) {
                 container.innerHTML = '<p class="text-slate-400 text-center col-span-full py-10 border border-dashed border-slate-200 bg-white rounded-[1.5rem] shadow-sm">Pilihan produk sedang diperbarui. Silakan cek lagi dalam beberapa saat.</p>';
+                updateCatalogPagination();
                 if (window.CEPAT_SEO && typeof window.CEPAT_SEO.sync === 'function') {
                     window.CEPAT_SEO.sync({ products: [], reason: 'catalog-empty' });
                 }
                 return;
             }
 
-            container.innerHTML = [...products].reverse().map((p, index) => {
+            container.innerHTML = products.map((p, index) => {
                 let delayClass = `delay-${(index % 3) + 1}`;
                 const productTitle = normalizeCatalogText(p && p.title) || 'Produk';
                 const productDesc = buildCatalogDescription(p);
                 const fallbackLetterCandidate = productTitle.charAt(0).toUpperCase();
                 const fallbackLetter = /^[A-Z0-9]$/.test(fallbackLetterCandidate) ? fallbackLetterCandidate : 'P';
                 
-                // Logic URL Detail (Bisa ke LP atau Checkout)
                 const checkoutUrl = `checkout.html?id=${encodeURIComponent(String((p && p.id) || ''))}`;
-                const detailUrl = safePublicUrl(p && p.lp_url, checkoutUrl);
 
                 const imgUrl = safePublicUrl(p && p.image_url, '');
                 const webpUrl = imgUrl && !imgUrl.endsWith('.webp') && imgUrl.includes('imagekit.io') ? imgUrl + '?tr=f-webp,q-75' : imgUrl;
                 const thumbUrl = imgUrl && imgUrl.includes('imagekit.io') ? imgUrl + '?tr=f-webp,q-60,w-300' : imgUrl;
                 return `
-                <article class="catalog-card p-3 md:p-4 flex flex-col h-full fade-in ${delayClass}">
-                    <a href="${escapeHtml(detailUrl)}" target="_blank" rel="noopener noreferrer" class="catalog-media block overflow-hidden rounded-[1.1rem] bg-slate-100 border border-slate-100">
+                <article class="catalog-card p-2.5 md:p-3.5 flex flex-col h-full fade-in ${delayClass}">
+                    <div class="catalog-media block overflow-hidden rounded-[1rem] bg-slate-100 border border-slate-100">
                         ${imgUrl
                             ? `<picture><source type="image/webp" srcset="${escapeHtml(thumbUrl)} 300w, ${escapeHtml(webpUrl)} 600w" sizes="(max-width: 320px) 280px, (max-width: 768px) 45vw, (max-width: 1024px) 23vw, 18vw"><img src="${escapeHtml(imgUrl)}" class="catalog-image w-full h-full object-cover" onerror="this.outerHTML='<div class=&quot;catalog-image flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-lg font-black text-slate-400&quot;>${fallbackLetter}</div>'" loading="lazy" decoding="async" fetchpriority="${index < 4 ? 'high' : 'low'}" alt="${escapeHtml(productTitle)}"></picture>`
                             : `<div class="catalog-image flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-lg font-black text-slate-400">${fallbackLetter}</div>`}
-                    </a>
+                    </div>
 
-                    <div class="flex flex-1 flex-col pt-4">
-                        <div class="space-y-2">
+                    <div class="flex flex-1 flex-col pt-3.5">
+                        <div class="space-y-1.5">
                             <p class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Produk Fisik</p>
                             <h3 class="catalog-title text-sm md:text-[15px] font-bold leading-snug text-slate-800 line-clamp-2">${escapeHtml(productTitle)}</h3>
-                            <p class="catalog-desc text-[11px] md:text-xs leading-5 text-slate-500" data-product-desc style="min-height: 3.9rem;">${escapeHtml(productDesc)}</p>
+                            <p class="catalog-desc text-[11px] md:text-xs leading-5 text-slate-500" data-product-desc>${escapeHtml(productDesc)}</p>
                         </div>
 
-                        <div class="mt-auto pt-4 border-t border-slate-100">
-                            <div class="flex items-end justify-between gap-3 mb-3">
+                        <div class="mt-auto pt-3.5 border-t border-slate-100">
+                            <div class="flex items-end justify-between gap-3 mb-2.5">
                                 <div class="min-w-0">
                                     <p class="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Harga</p>
                                     <p class="text-sm md:text-base font-black tracking-tight text-slate-900">Rp ${Number(p.harga).toLocaleString('id-ID')}</p>
@@ -949,13 +1026,7 @@
                                 <span class="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-500">Siap Kirim</span>
                             </div>
 
-                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                <a href="${escapeHtml(detailUrl)}"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    class="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-3 py-3 text-xs font-bold text-slate-600 hover:border-slate-300 hover:bg-slate-50 transition-colors">
-                                    Detail
-                                </a>
+                            <div class="grid grid-cols-2 gap-2">
                                 <button type="button"
                                     data-add-to-cart-id="${escapeHtml(String((p && p.id) || ''))}"
                                     class="inline-flex items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 px-3 py-3 text-xs font-bold text-indigo-700 hover:border-indigo-300 hover:bg-indigo-100 transition-colors">
@@ -975,8 +1046,9 @@
             lucide.createIcons();
             attachCatalogCartHandlers(products);
             syncCartCounter();
+            updateCatalogPagination();
             if (window.CEPAT_SEO && typeof window.CEPAT_SEO.sync === 'function') {
-                window.CEPAT_SEO.sync({ products: products, reason: 'catalog-render' });
+                window.CEPAT_SEO.sync({ products: catalogState.allProducts, reason: 'catalog-render' });
             }
         }
 
@@ -999,13 +1071,14 @@
             } else if (cachedPayload && typeof cachedPayload === 'object') {
                 cachedList = Array.isArray(cachedPayload.data) ? cachedPayload.data : null;
                 cachedAt = Number(cachedPayload.time || 0);
-                if (!isFinite(cachedAt)) cachedAt = 0;
+                if (!Number.isFinite(cachedAt)) cachedAt = 0;
             }
+            const cachedDataSignature = Array.isArray(cachedList) ? JSON.stringify(cachedList) : '';
             
             // JIKA ADA CACHE: Langsung render tanpa spinner loading!
             if (cachedList) {
                 try {
-                    renderCatalog(cachedList);
+                    applyCatalogDataset(cachedList, { preserveVisible: true });
                 } catch(e) {
                     console.error("Cache corrupted", e);
                     localStorage.removeItem(CACHE_KEY_CATALOG);
@@ -1053,14 +1126,15 @@
                     const r = catalogResult && catalogResult.data ? catalogResult.data : null;
                     if (r && r.status === 'success') {
                         const data = Array.isArray(r.available) ? r.available : [];
+                        const nextDataSignature = JSON.stringify(data);
                         const freshData = JSON.stringify({ data: data, time: Date.now() });
-                        if(cachedData !== freshData) {
+                        if (cachedDataSignature !== nextDataSignature || !cachedList) {
                             if (cacheApi && typeof cacheApi.writeEntry === 'function') {
                                 cacheApi.writeEntry(CACHE_KEY_CATALOG, data, { tags: ['products'], time: Date.now() });
                             } else {
                                 localStorage.setItem(CACHE_KEY_CATALOG, freshData);
                             }
-                            renderCatalog(data);
+                            applyCatalogDataset(data, { preserveVisible: !!cachedList });
                         }
                     }
                 }
@@ -1068,6 +1142,9 @@
                 console.error('Background sync failed', err);
                 if (!cachedData) {
                     document.getElementById('public-products').innerHTML = '<p class="text-red-500 text-center col-span-full bg-red-50 border border-red-100 py-4 rounded-[1.5rem]">Produk belum berhasil dimuat. Silakan refresh halaman dan coba lagi.</p>';
+                    catalogState.allProducts = [];
+                    catalogState.visibleCount = 0;
+                    updateCatalogPagination();
                     if (window.CEPAT_SEO && typeof window.CEPAT_SEO.scheduleSync === 'function') {
                         window.CEPAT_SEO.scheduleSync('catalog-error');
                     }
@@ -1078,6 +1155,13 @@
         window.onload = () => { 
             lucide.createIcons(); 
             syncCartCounter();
+            const loadMoreButton = document.getElementById('catalog-load-more');
+            if (loadMoreButton && !window.__CEPAT_CATALOG_LOAD_MORE_BOUND__) {
+                window.__CEPAT_CATALOG_LOAD_MORE_BOUND__ = true;
+                loadMoreButton.addEventListener('click', function () {
+                    loadMoreCatalogPage();
+                });
+            }
             if (!window.__CEPAT_CART_COUNTER_BOUND__) {
                 window.__CEPAT_CART_COUNTER_BOUND__ = true;
                 window.addEventListener('cepat:cart:changed', function () {

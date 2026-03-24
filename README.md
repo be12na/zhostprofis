@@ -206,6 +206,13 @@ Fitur berikut sudah dipensiunkan dari runtime aktif:
 
 - integrasi Fonnte
 - integrasi payment gateway legacy
+- validasi stok produk (frontend/backend)
 - seluruh fitur affiliate
 
 Lihat `CHANGELOG.md` untuk detail perubahan penghapusan fitur legacy.
+
+## Catatan API Terkait Stok
+
+- Tidak ada endpoint runtime untuk validasi stok produk.
+- Alur checkout tidak lagi melakukan pemblokiran atau pengecekan stok otomatis.
+- Jika deployment lama memiliki endpoint/route stok kustom, endpoint tersebut harus dipensiunkan di lingkungan masing-masing.
